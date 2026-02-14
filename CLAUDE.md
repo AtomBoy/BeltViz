@@ -52,9 +52,29 @@ igrf14coeffs.json → computeB(r,θ,φ) → traceFieldLine() → buildFieldLineG
 - Field line tracer uses 200 km step size, bidirectional tracing (positive and negative ds), terminates at r < 0.99*Re or r > 12*Re
 - Seed points are placed at configurable magnetic latitudes in the northern hemisphere only; the tracer follows lines to the southern hemisphere automatically
 
-### Rebuilding field lines
+### Rebuilding visualizations
 
-When GUI controls change parameters that affect tracing (IGRF degree, latitude bands, longitude count), `main.js:rebuildFieldLines()` disposes all old geometries and retraces from scratch. Visual-only changes (tube radius, visibility, auto-rotate) skip recomputation.
+When GUI controls change parameters that affect computation (IGRF degree, latitude bands, longitude count), `main.js:rebuildFieldLines()` disposes all old geometries and retraces from scratch. Visual-only changes (tube radius, visibility, auto-rotate) skip recomputation. The same dispose-and-rebuild pattern applies to isosurfaces.
+
+### Isosurface pipeline (Phase 2)
+
+```
+coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCubes.extractIsosurface() → isosurfaces.buildIsosurfaceGroup() → scene
+              computeBMagnitude on 3D grid         cached          per isovalue level              Three.js meshes with transparency
+```
+
+- `src/physics/scalarFieldWorker.js` — Web Worker evaluating |B| on a 64^3 (or 48/96) Cartesian grid spanning -12 Re to +12 Re. Physics modules import directly (pure functions, no DOM). Grid is cached; only recomputed on `maxDegree` or `resolution` change.
+- `src/physics/marchingCubes.js` — Custom marching cubes operating on cached Float32Array. Runs on main thread (~20-50ms per level). Skips cells with `Infinity` (Earth interior mask).
+- `src/scene/isosurfaces.js` — Converts extracted geometry to Three.js meshes. `MeshPhysicalMaterial` with `depthWrite: false`, `transparent: true`, `side: DoubleSide`. Outer (weaker) surfaces get lower `renderOrder`.
+- `src/scene/clippingPlanes.js` — Equatorial and meridional `THREE.Plane` instances applied via `material.clippingPlanes`. Requires `renderer.localClippingEnabled = true`.
+
+### Radiation belt visualization
+
+The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries (inner belt: L=1.2–2, outer belt: L=3–6) rendered as colored semi-transparent shells via `src/scene/radiationBelts.js`.
+
+### Satellite environment
+
+- `src/physics/magneticEnvironment.js` — Computes L-shell (dipole approximation: `tan(λ_m) = |Br|/(2*Bperp)`, `L = r/(Re*cos²λ_m)`), radiation belt region classification, SAA proximity at any point. Reuses `computeB`.
 
 ## Testing
 
@@ -64,3 +84,5 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `legendre.test.js` — polynomial values against known analytic formulas, NaN safety at poles
 - `igrf.test.js` — dipole physics (pole/equator ratio, r^-3 decay), full IGRF magnitude ranges
 - `fieldLineTracer.test.js` — closed field lines return to surface, altitude scaling with latitude, point continuity
+- `marchingCubes.test.js` — sphere isosurface extraction, vertex positions, normals, Earth masking, empty output for out-of-range values
+- `magneticEnvironment.test.js` — L-shell values at equator/latitude, region classification, SAA proximity comparison
