@@ -3,7 +3,7 @@ import GUI from 'lil-gui';
 /**
  * Create the lil-gui control panel.
  * @param {object} params - Mutable params object
- * @param {object} callbacks - { onRebuild, onVisualChange, onIsoRebuild, onIsoVisualChange, onClipChange, onBeltRebuild, onBeltVisualChange }
+ * @param {object} callbacks
  * @returns {GUI}
  */
 export function createControlPanel(params, callbacks) {
@@ -15,6 +15,7 @@ export function createControlPanel(params, callbacks) {
     onClipChange,
     onBeltRebuild,
     onBeltVisualChange,
+    onSatelliteChange,
   } = callbacks;
 
   const gui = new GUI({ title: 'BeltViz Controls' });
@@ -38,6 +39,9 @@ export function createControlPanel(params, callbacks) {
     if (v) onIsoRebuild();
     else onIsoVisualChange();
   });
+  isoFolder.add(params, 'isoMode', { 'L-shell (field topology)': 'lShell', 'Field Strength |B|': 'fieldStrength' })
+    .name('Mode')
+    .onChange(onIsoRebuild);
   isoFolder.add(params, 'isoResolution', { Low: 48, Medium: 64, High: 96 })
     .name('Resolution')
     .onChange(onIsoRebuild);
@@ -46,12 +50,23 @@ export function createControlPanel(params, callbacks) {
     .onChange(onIsoVisualChange);
 
   // Per-level toggles
-  const levelsFolder = isoFolder.addFolder('Levels (nT)');
-  for (const level of Object.keys(params.isoLevels)) {
-    levelsFolder.add(params.isoLevels, level)
-      .name(`${Number(level).toLocaleString()} nT`)
-      .onChange(onIsoVisualChange);
+  const levelsFolder = isoFolder.addFolder('Levels');
+  function rebuildLevelToggles() {
+    for (const c of [...levelsFolder.controllers]) {
+      c.destroy();
+    }
+    for (const level of Object.keys(params.isoLevels)) {
+      const label = params.isoMode === 'lShell'
+        ? `L = ${level}`
+        : `${Number(level).toLocaleString()} nT`;
+      levelsFolder.add(params.isoLevels, level)
+        .name(label)
+        .onChange(onIsoVisualChange);
+    }
   }
+  rebuildLevelToggles();
+  params._rebuildLevelToggles = rebuildLevelToggles;
+
   levelsFolder.close();
   isoFolder.close();
 
@@ -75,6 +90,14 @@ export function createControlPanel(params, callbacks) {
     .name('Meridional Angle')
     .onChange(onClipChange);
   clipFolder.close();
+
+  // --- Satellite Probe folder ---
+  const satFolder = gui.addFolder('Satellite Probe');
+  satFolder.add(params, 'showSatellite').name('Show Probe').onChange(onSatelliteChange);
+  satFolder.add(params, 'satLatitude', -90, 90, 0.5).name('Latitude').onChange(onSatelliteChange);
+  satFolder.add(params, 'satLongitude', -180, 180, 0.5).name('Longitude').onChange(onSatelliteChange);
+  satFolder.add(params, 'satAltitude', 200, 36000, 50).name('Altitude (km)').onChange(onSatelliteChange);
+  satFolder.close();
 
   return gui;
 }

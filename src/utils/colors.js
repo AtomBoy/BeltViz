@@ -23,3 +23,13 @@ export function fieldStrengthToColor(bMag, bMin, bMax) {
   const hue = (1 - t) * 0.66; // 0.66 = blue, 0 = red
   return new Color().setHSL(hue, 0.9, 0.5);
 }
+
+/**
+ * Map L-shell value to a color.
+ * Low L (near Earth) = warm (red/orange), high L (far) = cool (blue/purple).
+ */
+export function lShellToColor(lValue, lMin, lMax) {
+  const t = Math.min(1, Math.max(0, (lValue - lMin) / (lMax - lMin)));
+  const hue = t * 0.75; // 0 = red, 0.75 = violet
+  return new Color().setHSL(hue, 0.85, 0.55);
+}

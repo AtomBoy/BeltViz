@@ -13,7 +13,8 @@ import {
   disposeIsosurfaceGroup,
   updateIsosurfaceOpacity,
   updateIsosurfaceClipping,
-  DEFAULT_ISO_LEVELS,
+  DEFAULT_B_LEVELS,
+  DEFAULT_L_LEVELS,
 } from './scene/isosurfaces.js';
 import {
   buildRadiationBeltGroup,
@@ -22,6 +23,10 @@ import {
   BELT_DEFINITIONS,
 } from './scene/radiationBelts.js';
 import { createClippingPlanes } from './scene/clippingPlanes.js';
+import { createSatelliteMarker } from './scene/satelliteMarker.js';
+import { geographicToPhysicsPosition } from './physics/satellitePosition.js';
+import { computeMagneticEnvironment } from './physics/magneticEnvironment.js';
+import { updateEnvironmentReadout, hideEnvironmentReadout } from './ui/environmentReadout.js';
 import { KM_TO_SCENE } from './utils/constants.js';
 
 // --- Params (mutable, controlled by GUI) ---
@@ -34,6 +39,7 @@ const params = {
   autoRotate: true,
   // Isosurface params
   showIsosurfaces: false,
+  isoMode: 'lShell', // 'lShell' or 'fieldStrength'
   isoResolution: 64,
   isoOpacity: 0.2,
   isoLevels: {},
@@ -44,12 +50,29 @@ const params = {
   clipEquatorial: false,
   clipMeridional: false,
   clipMeridionalAngle: 0,
+  // Satellite probe params
+  showSatellite: false,
+  satLatitude: 0,
+  satLongitude: 0,
+  satAltitude: 400,
 };
 
-// Initialize level toggles from defaults
-for (const level of DEFAULT_ISO_LEVELS) {
-  params.isoLevels[level] = [10000, 5000, 2000, 500].includes(level);
+/**
+ * Populate isoLevels based on current mode.
+ */
+function initIsoLevels() {
+  params.isoLevels = {};
+  if (params.isoMode === 'lShell') {
+    for (const level of DEFAULT_L_LEVELS) {
+      params.isoLevels[level] = [2, 4, 6, 10].includes(level);
+    }
+  } else {
+    for (const level of DEFAULT_B_LEVELS) {
+      params.isoLevels[level] = [10000, 5000, 2000, 500].includes(level);
+    }
+  }
 }
+initIsoLevels();
 
 // --- Latitude bands for seed points ---
 const LATITUDE_SETS = [
@@ -90,6 +113,10 @@ const controls = setupControls(camera, renderer);
 
 // --- Clipping planes ---
 const clipping = createClippingPlanes();
+
+// --- Satellite marker ---
+const satellite = createSatelliteMarker();
+scene.add(satellite.mesh);
 
 // --- Field lines ---
 let fieldLineGroup = null;
@@ -150,15 +177,15 @@ function applyVisualChanges() {
 
 // --- Isosurface state ---
 let isoWorker = null;
-let cachedGrid = null;
-let cachedGridMaxDegree = null;
-let cachedGridResolution = null;
-let isosurfaceGroup = null;
-
-// --- Radiation belt state ---
+let cachedBGrid = null;
+let cachedBGridMaxDegree = null;
+let cachedBGridResolution = null;
 let cachedLShellGrid = null;
 let cachedLShellMaxDegree = null;
 let cachedLShellResolution = null;
+let isosurfaceGroup = null;
+
+// --- Radiation belt state ---
 let radiationBeltGroup = null;
 
 /**
@@ -180,37 +207,69 @@ function getOrCreateWorker() {
 }
 
 /**
- * Request a new |B| grid from the Worker, then extract and render isosurfaces.
+ * Get the appropriate cached grid for the current iso mode,
+ * or null if it needs to be computed.
+ */
+function getCachedIsoGrid(degree, res) {
+  if (params.isoMode === 'lShell') {
+    if (cachedLShellGrid && cachedLShellMaxDegree === degree && cachedLShellResolution === res) {
+      return cachedLShellGrid;
+    }
+  } else {
+    if (cachedBGrid && cachedBGridMaxDegree === degree && cachedBGridResolution === res) {
+      return cachedBGrid;
+    }
+  }
+  return null;
+}
+
+/**
+ * Request the appropriate grid from the Worker, then extract and render isosurfaces.
  */
 function rebuildIsosurfaces() {
   if (!params.showIsosurfaces || !coeffs) return;
 
+  // When mode changes, rebuild level toggles
+  initIsoLevels();
+  if (params._rebuildLevelToggles) params._rebuildLevelToggles();
+
   const res = Number(params.isoResolution);
   const degree = params.maxDegree;
 
-  if (cachedGrid && cachedGridMaxDegree === degree && cachedGridResolution === res) {
+  // Check if we can reuse cached grid
+  if (getCachedIsoGrid(degree, res)) {
     extractAndRenderIsosurfaces();
     return;
   }
 
-  showIsoLoading(true, 'Computing |B| field...');
+  const isLShell = params.isoMode === 'lShell';
+  const workerType = isLShell ? 'computeLShellGrid' : 'computeGrid';
+  const label = isLShell ? 'L-shell' : '|B|';
+
+  showIsoLoading(true, `Computing ${label} field...`);
 
   const worker = getOrCreateWorker();
 
   worker.onmessage = (e) => {
     if (e.data.type === 'progress') {
-      updateIsoProgress(e.data.percent, '|B|');
+      updateIsoProgress(e.data.percent, label);
     } else if (e.data.type === 'gridReady') {
-      cachedGrid = e.data.grid;
-      cachedGridMaxDegree = degree;
-      cachedGridResolution = e.data.resolution;
+      cachedBGrid = e.data.grid;
+      cachedBGridMaxDegree = degree;
+      cachedBGridResolution = e.data.resolution;
+      showIsoLoading(false);
+      extractAndRenderIsosurfaces();
+    } else if (e.data.type === 'lshellGridReady') {
+      cachedLShellGrid = e.data.grid;
+      cachedLShellMaxDegree = degree;
+      cachedLShellResolution = e.data.resolution;
       showIsoLoading(false);
       extractAndRenderIsosurfaces();
     }
   };
 
   worker.postMessage({
-    type: 'computeGrid',
+    type: workerType,
     coeffs,
     maxDegree: degree,
     resolution: res,
@@ -220,10 +279,14 @@ function rebuildIsosurfaces() {
 }
 
 /**
- * Extract isosurfaces from cached grid and render them.
+ * Extract isosurfaces from the appropriate cached grid and render them.
  */
 function extractAndRenderIsosurfaces() {
-  if (!cachedGrid) return;
+  const res = Number(params.isoResolution);
+  const degree = params.maxDegree;
+  const grid = getCachedIsoGrid(degree, res);
+
+  if (!grid) return;
 
   if (isosurfaceGroup) {
     scene.remove(isosurfaceGroup);
@@ -233,13 +296,15 @@ function extractAndRenderIsosurfaces() {
 
   if (!params.showIsosurfaces) return;
 
+  const gridRes = params.isoMode === 'lShell' ? cachedLShellResolution : cachedBGridResolution;
+
   const surfaces = [];
   for (const [levelStr, enabled] of Object.entries(params.isoLevels)) {
     if (!enabled) continue;
     const level = Number(levelStr);
     const { positions, normals, indices } = extractIsosurface(
-      cachedGrid,
-      cachedGridResolution,
+      grid,
+      gridRes,
       GRID_BOUNDS_MIN,
       GRID_BOUNDS_MAX,
       level
@@ -257,6 +322,7 @@ function extractAndRenderIsosurfaces() {
   isosurfaceGroup = buildIsosurfaceGroup(surfaces, {
     opacity: params.isoOpacity,
     clippingPlanes: activePlanes,
+    mode: params.isoMode,
   });
   scene.add(isosurfaceGroup);
 }
@@ -271,7 +337,9 @@ function applyIsoVisualChanges() {
     return;
   }
 
-  if (cachedGrid) {
+  const res = Number(params.isoResolution);
+  const degree = params.maxDegree;
+  if (getCachedIsoGrid(degree, res)) {
     extractAndRenderIsosurfaces();
   }
   if (isosurfaceGroup) {
@@ -343,7 +411,6 @@ function extractAndRenderBelts() {
     if (!showBelt) continue;
 
     const surfaces = [];
-    // Inner boundary
     const inner = extractIsosurface(
       cachedLShellGrid,
       cachedLShellResolution,
@@ -353,7 +420,6 @@ function extractAndRenderBelts() {
     );
     surfaces.push(inner);
 
-    // Outer boundary
     const outer = extractIsosurface(
       cachedLShellGrid,
       cachedLShellResolution,
@@ -444,6 +510,38 @@ function updateIsoProgress(percent, label) {
   if (el) el.textContent = `Computing ${label || ''} field... ${percent}%`;
 }
 
+// --- Satellite probe ---
+
+function updateSatelliteProbe() {
+  if (!params.showSatellite || !coeffs) {
+    satellite.setVisible(false);
+    hideEnvironmentReadout();
+    return;
+  }
+
+  const pos = geographicToPhysicsPosition(
+    params.satLatitude,
+    params.satLongitude,
+    params.satAltitude
+  );
+  satellite.setPosition(pos.x, pos.y, pos.z);
+  satellite.setVisible(true);
+
+  const env = computeMagneticEnvironment(
+    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree
+  );
+
+  updateEnvironmentReadout({
+    latDeg: params.satLatitude,
+    lonDeg: params.satLongitude,
+    altitudeKm: params.satAltitude,
+    bMagnitude: env.bMagnitude,
+    lShell: env.lShell,
+    region: env.region,
+    saaProximity: env.saaProximity,
+  }, 'Satellite Probe');
+}
+
 // --- UI ---
 createInfoOverlay();
 createControlPanel(params, {
@@ -454,6 +552,7 @@ createControlPanel(params, {
   onClipChange: applyClipChanges,
   onBeltRebuild: () => rebuildRadiationBelts(),
   onBeltVisualChange: applyBeltVisualChanges,
+  onSatelliteChange: updateSatelliteProbe,
 });
 
 // --- Resize ---

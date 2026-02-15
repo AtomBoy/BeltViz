@@ -1,32 +1,40 @@
 import * as THREE from 'three';
-import { fieldStrengthToColor } from '../utils/colors.js';
+import { fieldStrengthToColor, lShellToColor } from '../utils/colors.js';
 
 /**
- * Default isosurface levels in nT, logarithmically spaced from
- * near-surface (~60,000 nT) down to outer belt (~100 nT at 6 Re).
+ * Default isosurface levels for |B| mode (nT).
  */
-export const DEFAULT_ISO_LEVELS = [40000, 20000, 10000, 5000, 2000, 1000, 500, 200];
+export const DEFAULT_B_LEVELS = [40000, 20000, 10000, 5000, 2000, 1000, 500, 200];
 
-// Range for color mapping
-const B_MIN = 100;
-const B_MAX = 50000;
+/**
+ * Default isosurface levels for L-shell mode (dimensionless).
+ * These follow the field line topology — each surface shows where
+ * a given field line "shell" exists in space.
+ */
+export const DEFAULT_L_LEVELS = [1.5, 2, 3, 4, 5, 6, 8, 10];
+
+// Keep backward compat for imports that use DEFAULT_ISO_LEVELS
+export const DEFAULT_ISO_LEVELS = DEFAULT_B_LEVELS;
 
 /**
  * Build a Three.js Group containing isosurface meshes.
  *
  * @param {Array} surfaces - Array of { level, positions, normals, indices }
- *   where level is the nT value and positions/normals/indices come from extractIsosurface
- * @param {object} options - { opacity, clippingPlanes }
+ * @param {object} options - { opacity, clippingPlanes, mode }
+ *   mode: 'fieldStrength' or 'lShell'
  * @returns {THREE.Group}
  */
 export function buildIsosurfaceGroup(surfaces, options = {}) {
   const group = new THREE.Group();
   const opacity = options.opacity ?? 0.2;
   const clippingPlanes = options.clippingPlanes || [];
+  const mode = options.mode || 'fieldStrength';
 
-  // Sort surfaces by level ascending (weakest/outermost first)
-  // so outer surfaces render before inner ones
-  const sorted = [...surfaces].sort((a, b) => a.level - b.level);
+  // Sort: for |B|, ascending (weakest/outermost first)
+  // For L-shell, descending (largest L / outermost first)
+  const sorted = [...surfaces].sort((a, b) =>
+    mode === 'lShell' ? b.level - a.level : a.level - b.level
+  );
 
   sorted.forEach((surface, i) => {
     if (surface.positions.length === 0) return;
@@ -42,7 +50,12 @@ export function buildIsosurfaceGroup(surfaces, options = {}) {
     );
     geometry.setIndex(new THREE.BufferAttribute(surface.indices, 1));
 
-    const color = fieldStrengthToColor(surface.level, B_MIN, B_MAX);
+    let color;
+    if (mode === 'lShell') {
+      color = lShellToColor(surface.level, 1, 12);
+    } else {
+      color = fieldStrengthToColor(surface.level, 100, 50000);
+    }
 
     const material = new THREE.MeshPhysicalMaterial({
       color,
@@ -56,7 +69,6 @@ export function buildIsosurfaceGroup(surfaces, options = {}) {
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    // Outer (weaker) surfaces render first
     mesh.renderOrder = i;
     mesh.userData.isoLevel = surface.level;
     group.add(mesh);

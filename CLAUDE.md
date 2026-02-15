@@ -72,9 +72,12 @@ coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCube
 
 The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries (inner belt: L=1.2–2, outer belt: L=3–6) rendered as colored semi-transparent shells via `src/scene/radiationBelts.js`.
 
-### Satellite environment
+### Satellite environment probe
 
 - `src/physics/magneticEnvironment.js` — Computes L-shell (dipole approximation: `tan(λ_m) = |Br|/(2*Bperp)`, `L = r/(Re*cos²λ_m)`), radiation belt region classification, SAA proximity at any point. Reuses `computeB`.
+- `src/physics/satellitePosition.js` — Geographic lat/lon/alt to physics coordinates (Y-up Cartesian + spherical). Ready for future satellite.js (SGP4/TLE) integration.
+- `src/scene/satelliteMarker.js` — Small emissive sphere at configured position.
+- `src/ui/environmentReadout.js` — Fixed-position HTML overlay showing |B|, L-shell, region, SAA status. Styled to match infoOverlay.
 
 ## Testing
 
@@ -86,3 +89,4 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `fieldLineTracer.test.js` — closed field lines return to surface, altitude scaling with latitude, point continuity
 - `marchingCubes.test.js` — sphere isosurface extraction, vertex positions, normals, Earth masking, empty output for out-of-range values
 - `magneticEnvironment.test.js` — L-shell values at equator/latitude, region classification, SAA proximity comparison
+- `satellitePosition.test.js` — geographic-to-physics coordinate conversion, pole positions, altitude offsets
