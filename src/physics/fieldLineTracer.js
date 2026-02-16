@@ -75,6 +75,24 @@ function rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams) {
 }
 
 /**
+ * Compute adaptive step size based on distance from Earth.
+ * Near Earth (r < 2 Re): use baseStep for accuracy in strong-field region.
+ * Far from Earth: scale step with sqrt(r/Re) but cap at 4x baseStep
+ * to maintain accuracy in the weak external field.
+ *
+ * @param {number} r - Distance from Earth center in km
+ * @param {number} baseStep - Base step size in km (sign preserved)
+ * @returns {number} Adaptive step size in km
+ */
+function adaptiveStepSize(r, baseStep) {
+  const rRe = r / EARTH_RADIUS_KM;
+  if (rRe < 2) return baseStep;
+  // Scale gently with distance, cap at 4x base to keep tail accuracy
+  const scale = Math.min(4, Math.sqrt(rRe / 2));
+  return baseStep * scale;
+}
+
+/**
  * Trace a field line in one direction from a starting point.
  * @param {number} startX - X in km
  * @param {number} startY - Y in km
@@ -84,8 +102,8 @@ function rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams) {
  * @returns {number[][]} Array of [x, y, z] points in km
  */
 function traceHalf(startX, startY, startZ, coeffs, options = {}) {
-  const ds = options.stepSize || 200;
-  const maxSteps = options.maxSteps || 5000;
+  const baseDs = options.stepSize || 200;
+  const maxSteps = options.maxSteps || 10000;
   const rMin = options.rMin || EARTH_RADIUS_KM * 0.99;
   const rMax = options.rMax || EARTH_RADIUS_KM * 40;
   const maxDegree = options.maxDegree;
@@ -97,16 +115,18 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   let z = startZ;
 
   for (let i = 0; i < maxSteps; i++) {
+    const r = Math.sqrt(x * x + y * y + z * z);
+    const ds = adaptiveStepSize(r, baseDs);
     const next = rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams);
     if (!next) break;
 
     [x, y, z] = next;
-    const r = Math.sqrt(x * x + y * y + z * z);
+    const rNext = Math.sqrt(x * x + y * y + z * z);
 
     points.push([x, y, z]);
 
-    if (r < rMin) break; // Hit Earth's surface
-    if (r > rMax) break; // Escaped to space (open field line)
+    if (rNext < rMin) break; // Hit Earth's surface
+    if (rNext > rMax) break; // Escaped to space (open field line)
   }
 
   return points;
@@ -117,7 +137,7 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
  * @returns {number[][]} Array of [x, y, z] points in km
  */
 export function traceFieldLine(startX, startY, startZ, coeffs, options = {}) {
-  const stepSize = options.stepSize || 200;
+  const stepSize = options.stepSize || 100;
 
   const forward = traceHalf(startX, startY, startZ, coeffs, {
     ...options,
@@ -164,12 +184,14 @@ export function generateSeedPoints(options = {}) {
   }
 
   // Southern hemisphere mirrors (only the high-latitude bands that
-  // produce visually distinct open field lines)
+  // produce visually distinct open field lines).
+  // Use half the longitudes to avoid dense clustering near poles.
   if (bothHemispheres) {
     const southLats = latitudes.filter((l) => l >= 55);
+    const nSouthLon = Math.max(4, Math.ceil(nLongitudes / 2));
     for (const lat of southLats) {
-      for (let i = 0; i < nLongitudes; i++) {
-        const lon = (360 / nLongitudes) * i;
+      for (let i = 0; i < nSouthLon; i++) {
+        const lon = (360 / nSouthLon) * i;
         const theta = (90 + lat) * (Math.PI / 180); // southern colatitude
         const phi = lon * (Math.PI / 180);
         const [x, y, z] = sphericalToCartesian(r0, theta, phi);
@@ -178,10 +200,12 @@ export function generateSeedPoints(options = {}) {
     }
   }
 
-  // Polar cap seeds — very high latitudes for open field lines
+  // Polar cap seeds — very high latitudes for open field lines.
+  // Use half the longitudes since lines converge tightly near the poles.
+  const nPolarLon = Math.max(4, Math.ceil(nLongitudes / 2));
   for (const lat of polarCapLatitudes) {
-    for (let i = 0; i < nLongitudes; i++) {
-      const lon = (360 / nLongitudes) * i;
+    for (let i = 0; i < nPolarLon; i++) {
+      const lon = (360 / nPolarLon) * i;
       // North polar cap
       const thetaN = (90 - lat) * (Math.PI / 180);
       const phi = lon * (Math.PI / 180);
