@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGlobe, createStarfield } from './scene/globe.js';
+import { createGlobe, createSun } from './scene/globe.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
 import { buildFieldLineGroup } from './scene/fieldLines.js';
@@ -20,6 +20,7 @@ import {
   buildRadiationBeltGroup,
   disposeRadiationBeltGroup,
   updateBeltClipping,
+  updateBeltOpacity,
   BELT_DEFINITIONS,
 } from './scene/radiationBelts.js';
 import { createClippingPlanes } from './scene/clippingPlanes.js';
@@ -46,6 +47,7 @@ const params = {
   // Radiation belt params
   showInnerBelt: false,
   showOuterBelt: false,
+  beltOpacity: 0.15,
   // Clipping params
   clipEquatorial: false,
   clipMeridional: false,
@@ -55,6 +57,14 @@ const params = {
   satLatitude: 0,
   satLongitude: 0,
   satAltitude: 400,
+  // Solar wind params
+  solarWindEnabled: false,
+  solarWindSpeed: 400,
+  solarWindDensity: 5,
+  imfBz: 0,
+  dst: 0,
+  sunLongitude: 0,
+  showMagnetopause: false,
 };
 
 /**
@@ -74,6 +84,26 @@ function initIsoLevels() {
 }
 initIsoLevels();
 
+/**
+ * Build solarWindParams object from GUI params (or null if disabled).
+ */
+function getSolarWindParams() {
+  if (!params.solarWindEnabled) return null;
+  return {
+    enabled: true,
+    vSw: params.solarWindSpeed,
+    nSw: params.solarWindDensity,
+    imfBz: params.imfBz,
+    dst: params.dst,
+    sunLonRad: params.sunLongitude * Math.PI / 180,
+  };
+}
+
+// Note: Scalar field grids (L-shell, |B|) always use pure IGRF — the dipole
+// L-shell approximation produces artifacts with external fields (neutral sheet
+// discontinuities, magnetopause boundary artifacts). Solar wind asymmetry is
+// shown through field line traces and the magnetopause mesh instead.
+
 // --- Latitude bands for seed points ---
 const LATITUDE_SETS = [
   [55],
@@ -83,6 +113,11 @@ const LATITUDE_SETS = [
   [20, 35, 50, 60, 72],
   [20, 30, 42, 54, 64, 75],
   [18, 28, 38, 48, 58, 68, 78],
+  [15, 24, 33, 42, 51, 60, 69, 78],
+  [14, 22, 30, 38, 46, 54, 62, 70, 78],
+  [12, 20, 28, 36, 44, 52, 60, 68, 74, 80],
+  [12, 19, 26, 33, 40, 47, 54, 61, 68, 74, 80],
+  [10, 17, 24, 31, 38, 45, 52, 59, 66, 72, 78, 82],
 ];
 
 // --- Three.js setup ---
@@ -100,15 +135,15 @@ scene.background = new THREE.Color(0x000008);
 const camera = new THREE.PerspectiveCamera(
   45,
   window.innerWidth / window.innerHeight,
-  0.1,
-  1000
+  0.01,
+  500
 );
 camera.position.set(0, 1.5, 4);
 
 // --- Scene objects ---
 createGlobe(scene);
-createStarfield(scene);
-setupLighting(scene);
+const { sunLight } = setupLighting(scene);
+const sun = createSun(scene);
 const controls = setupControls(camera, renderer);
 
 // --- Clipping planes ---
@@ -120,6 +155,7 @@ scene.add(satellite.mesh);
 
 // --- Field lines ---
 let fieldLineGroup = null;
+let fieldLineBuildId = 0; // generation counter to cancel stale async builds
 let coeffs = null;
 
 async function loadCoefficients() {
@@ -131,18 +167,24 @@ async function loadCoefficients() {
  * Trace field lines and build the mesh group.
  */
 async function rebuildFieldLines() {
+  const buildId = ++fieldLineBuildId;
+
   if (fieldLineGroup) {
     scene.remove(fieldLineGroup);
     fieldLineGroup.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) obj.material.dispose();
     });
+    fieldLineGroup = null;
   }
 
   const latitudes = LATITUDE_SETS[params.numLatitudes - 1];
+  const swActive = params.solarWindEnabled;
   const seeds = generateSeedPoints({
     latitudes,
     nLongitudes: params.numLongitudes,
+    bothHemispheres: swActive,
+    polarCapLatitudes: swActive ? [85, 88] : [],
   });
 
   const tracedLines = [];
@@ -150,13 +192,19 @@ async function rebuildFieldLines() {
     const seed = seeds[i];
     const points = traceFieldLine(seed.x, seed.y, seed.z, coeffs, {
       maxDegree: params.maxDegree,
+      solarWindParams: getSolarWindParams(),
     });
     tracedLines.push({ points, lat: seed.lat, lon: seed.lon });
 
     if (i % 4 === 3) {
       await new Promise((r) => setTimeout(r, 0));
+      // If a newer rebuild started while we yielded, abort this one
+      if (buildId !== fieldLineBuildId) return;
     }
   }
+
+  // Final check before adding to scene
+  if (buildId !== fieldLineBuildId) return;
 
   fieldLineGroup = buildFieldLineGroup(tracedLines, latitudeToColor, {
     radius: params.tubeRadius,
@@ -268,6 +316,11 @@ function rebuildIsosurfaces() {
     }
   };
 
+  // Use pure IGRF for scalar field grids. The dipole L-shell approximation
+  // breaks down with external fields (produces artifacts at the neutral sheet
+  // and magnetopause boundary). Field lines and the magnetopause mesh show
+  // the solar wind asymmetry instead. See: Roederer & Lejosne 2018,
+  // "Coordinates for Representing Radiation Belt Particle Flux".
   worker.postMessage({
     type: workerType,
     coeffs,
@@ -379,6 +432,7 @@ function rebuildRadiationBelts() {
     }
   };
 
+  // Pure IGRF for L-shell grids — see comment in rebuildIsosurfaces().
   worker.postMessage({
     type: 'computeLShellGrid',
     coeffs,
@@ -441,6 +495,7 @@ function extractAndRenderBelts() {
 
   radiationBeltGroup = buildRadiationBeltGroup(beltSurfaces, {
     clippingPlanes: activePlanes,
+    opacity: params.beltOpacity,
   });
   scene.add(radiationBeltGroup);
 }
@@ -457,6 +512,9 @@ function applyBeltVisualChanges() {
 
   if (cachedLShellGrid) {
     extractAndRenderBelts();
+  }
+  if (radiationBeltGroup) {
+    updateBeltOpacity(radiationBeltGroup, params.beltOpacity);
   }
 }
 
@@ -528,7 +586,7 @@ function updateSatelliteProbe() {
   satellite.setVisible(true);
 
   const env = computeMagneticEnvironment(
-    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree
+    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree, getSolarWindParams()
   );
 
   updateEnvironmentReadout({
@@ -542,6 +600,56 @@ function updateSatelliteProbe() {
   }, 'Satellite Probe');
 }
 
+// --- Solar wind change handler ---
+
+function updateSunPosition() {
+  const lonRad = params.sunLongitude * Math.PI / 180;
+  sun.setDirection(lonRad);
+  sun.group.visible = params.solarWindEnabled;
+  // Move directional light to match sun direction
+  sunLight.position.set(
+    Math.cos(lonRad) * 5,
+    3,
+    Math.sin(lonRad) * 5
+  );
+}
+
+function onSolarWindChange() {
+  // Solar wind affects everything: field lines, isosurfaces, belts, satellite
+  updateSunPosition();
+  rebuildFieldLines();
+  if (params.showIsosurfaces) rebuildIsosurfaces();
+  if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
+  if (params.showSatellite) updateSatelliteProbe();
+  if (params.showMagnetopause) rebuildMagnetopause();
+}
+
+// --- Magnetopause mesh state ---
+let magnetopauseGroup = null;
+
+function rebuildMagnetopause() {
+  if (magnetopauseGroup) {
+    scene.remove(magnetopauseGroup);
+    magnetopauseGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    magnetopauseGroup = null;
+  }
+
+  if (!params.showMagnetopause || !params.solarWindEnabled) return;
+
+  // Lazy import to avoid loading magnetopause code until needed
+  import('./scene/magnetopauseMesh.js').then(({ buildMagnetopauseMesh }) => {
+    magnetopauseGroup = buildMagnetopauseMesh(getSolarWindParams());
+    if (magnetopauseGroup) scene.add(magnetopauseGroup);
+  });
+}
+
+function onMagnetopauseChange() {
+  rebuildMagnetopause();
+}
+
 // --- UI ---
 createInfoOverlay();
 createControlPanel(params, {
@@ -553,6 +661,8 @@ createControlPanel(params, {
   onBeltRebuild: () => rebuildRadiationBelts(),
   onBeltVisualChange: applyBeltVisualChanges,
   onSatelliteChange: updateSatelliteProbe,
+  onSolarWindChange,
+  onMagnetopauseChange,
 });
 
 // --- Resize ---

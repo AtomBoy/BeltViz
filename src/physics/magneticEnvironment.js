@@ -6,6 +6,7 @@
  */
 
 import { computeB, computeBMagnitude } from './igrf.js';
+import { computeTotalB } from './totalField.js';
 import { cartesianToSpherical } from './coordinates.js';
 import { EARTH_RADIUS_KM } from '../utils/constants.js';
 
@@ -22,10 +23,13 @@ import { EARTH_RADIUS_KM } from '../utils/constants.js';
  * @param {number} phi - East longitude in radians
  * @param {object} coeffs - IGRF coefficients
  * @param {number} [maxDegree] - Maximum SH degree
+ * @param {object} [solarWindParams] - Solar wind parameters (null = pure IGRF)
  * @returns {number} L-shell value (dimensionless, in Earth radii)
  */
-export function computeLShell(r, theta, phi, coeffs, maxDegree) {
-  const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, maxDegree);
+export function computeLShell(r, theta, phi, coeffs, maxDegree, solarWindParams) {
+  const [Br, Bt, Bp] = solarWindParams?.enabled
+    ? computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams)
+    : computeB(r, theta, phi, coeffs, maxDegree);
 
   // Transverse field magnitude
   const Bperp = Math.sqrt(Bt * Bt + Bp * Bp);
@@ -115,15 +119,19 @@ export function computeSAAProximity(r, theta, phi, coeffs, maxDegree) {
  * @param {number} phi - East longitude in radians
  * @param {object} coeffs - IGRF coefficients
  * @param {number} [maxDegree] - Maximum SH degree
+ * @param {object} [solarWindParams] - Solar wind parameters (null = pure IGRF)
  * @returns {{ bMagnitude: number, bVector: number[], lShell: number, region: string, saaProximity: number }}
  */
-export function computeMagneticEnvironment(r, theta, phi, coeffs, maxDegree) {
-  const bVector = computeB(r, theta, phi, coeffs, maxDegree);
+export function computeMagneticEnvironment(r, theta, phi, coeffs, maxDegree, solarWindParams) {
+  const bVector = solarWindParams?.enabled
+    ? computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams)
+    : computeB(r, theta, phi, coeffs, maxDegree);
   const bMagnitude = Math.sqrt(
     bVector[0] * bVector[0] + bVector[1] * bVector[1] + bVector[2] * bVector[2]
   );
-  const lShell = computeLShell(r, theta, phi, coeffs, maxDegree);
+  const lShell = computeLShell(r, theta, phi, coeffs, maxDegree, solarWindParams);
   const region = classifyRegion(lShell);
+  // SAA detection remains IGRF-only: it measures the internal field anomaly
   const saaProximity = computeSAAProximity(r, theta, phi, coeffs, maxDegree);
 
   return { bMagnitude, bVector, lShell, region, saaProximity };

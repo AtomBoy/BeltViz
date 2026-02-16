@@ -1,4 +1,5 @@
 import { computeB } from './igrf.js';
+import { computeTotalB } from './totalField.js';
 import {
   cartesianToSpherical,
   sphericalToCartesian,
@@ -9,10 +10,19 @@ import { EARTH_RADIUS_KM } from '../utils/constants.js';
 /**
  * Compute the unit field direction at a Cartesian point (in km).
  * Returns [dx, dy, dz] unit vector along B, or null if inside Earth.
+ *
+ * @param {number} x - X in km
+ * @param {number} y - Y in km
+ * @param {number} z - Z in km
+ * @param {object} coeffs - IGRF coefficients
+ * @param {number} maxDegree - Maximum SH degree
+ * @param {object} [solarWindParams] - Solar wind parameters (null = pure IGRF)
  */
-function fieldDirection(x, y, z, coeffs, maxDegree) {
+function fieldDirection(x, y, z, coeffs, maxDegree, solarWindParams) {
   const [r, theta, phi] = cartesianToSpherical(x, y, z);
-  const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, maxDegree);
+  const [Br, Bt, Bp] = solarWindParams?.enabled
+    ? computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams)
+    : computeB(r, theta, phi, coeffs, maxDegree);
   const [Bx, By, Bz] = bFieldToCartesian(Br, Bt, Bp, theta, phi);
   const mag = Math.sqrt(Bx * Bx + By * By + Bz * Bz);
   if (mag < 1e-10) return null;
@@ -23,8 +33,8 @@ function fieldDirection(x, y, z, coeffs, maxDegree) {
  * Single RK4 step for field line tracing.
  * Returns the new position [x, y, z] after stepping ds along B.
  */
-function rk4Step(x, y, z, ds, coeffs, maxDegree) {
-  const k1 = fieldDirection(x, y, z, coeffs, maxDegree);
+function rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams) {
+  const k1 = fieldDirection(x, y, z, coeffs, maxDegree, solarWindParams);
   if (!k1) return null;
 
   const k2 = fieldDirection(
@@ -32,7 +42,8 @@ function rk4Step(x, y, z, ds, coeffs, maxDegree) {
     y + 0.5 * ds * k1[1],
     z + 0.5 * ds * k1[2],
     coeffs,
-    maxDegree
+    maxDegree,
+    solarWindParams
   );
   if (!k2) return null;
 
@@ -41,7 +52,8 @@ function rk4Step(x, y, z, ds, coeffs, maxDegree) {
     y + 0.5 * ds * k2[1],
     z + 0.5 * ds * k2[2],
     coeffs,
-    maxDegree
+    maxDegree,
+    solarWindParams
   );
   if (!k3) return null;
 
@@ -50,7 +62,8 @@ function rk4Step(x, y, z, ds, coeffs, maxDegree) {
     y + ds * k3[1],
     z + ds * k3[2],
     coeffs,
-    maxDegree
+    maxDegree,
+    solarWindParams
   );
   if (!k4) return null;
 
@@ -74,8 +87,9 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   const ds = options.stepSize || 200;
   const maxSteps = options.maxSteps || 5000;
   const rMin = options.rMin || EARTH_RADIUS_KM * 0.99;
-  const rMax = options.rMax || EARTH_RADIUS_KM * 12;
+  const rMax = options.rMax || EARTH_RADIUS_KM * 40;
   const maxDegree = options.maxDegree;
+  const solarWindParams = options.solarWindParams;
 
   const points = [[startX, startY, startZ]];
   let x = startX;
@@ -83,7 +97,7 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   let z = startZ;
 
   for (let i = 0; i < maxSteps; i++) {
-    const next = rk4Step(x, y, z, ds, coeffs, maxDegree);
+    const next = rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams);
     if (!next) break;
 
     [x, y, z] = next;
@@ -122,21 +136,63 @@ export function traceFieldLine(startX, startY, startZ, coeffs, options = {}) {
 /**
  * Generate seed points on Earth's surface at various magnetic latitudes.
  * Returns array of { x, y, z, lat, lon } in km.
+ *
+ * @param {object} options
+ * @param {number[]} options.latitudes - Latitude bands (degrees, positive = north)
+ * @param {number} options.nLongitudes - Number of longitude points per band
+ * @param {boolean} options.bothHemispheres - If true, also seed from southern hemisphere
+ * @param {number[]} options.polarCapLatitudes - Extra high-latitude seeds for open field lines
  */
 export function generateSeedPoints(options = {}) {
   const latitudes = options.latitudes || [25, 40, 55, 70];
   const nLongitudes = options.nLongitudes || 8;
+  const bothHemispheres = options.bothHemispheres || false;
+  const polarCapLatitudes = options.polarCapLatitudes || [];
   const r0 = EARTH_RADIUS_KM;
 
   const seeds = [];
+
+  // Standard latitude bands — northern hemisphere
   for (const lat of latitudes) {
     for (let i = 0; i < nLongitudes; i++) {
       const lon = (360 / nLongitudes) * i;
-      const theta = (90 - lat) * (Math.PI / 180); // colatitude for northern hemisphere
+      const theta = (90 - lat) * (Math.PI / 180);
       const phi = lon * (Math.PI / 180);
       const [x, y, z] = sphericalToCartesian(r0, theta, phi);
       seeds.push({ x, y, z, lat, lon });
     }
   }
+
+  // Southern hemisphere mirrors (only the high-latitude bands that
+  // produce visually distinct open field lines)
+  if (bothHemispheres) {
+    const southLats = latitudes.filter((l) => l >= 55);
+    for (const lat of southLats) {
+      for (let i = 0; i < nLongitudes; i++) {
+        const lon = (360 / nLongitudes) * i;
+        const theta = (90 + lat) * (Math.PI / 180); // southern colatitude
+        const phi = lon * (Math.PI / 180);
+        const [x, y, z] = sphericalToCartesian(r0, theta, phi);
+        seeds.push({ x, y, z, lat: -lat, lon });
+      }
+    }
+  }
+
+  // Polar cap seeds — very high latitudes for open field lines
+  for (const lat of polarCapLatitudes) {
+    for (let i = 0; i < nLongitudes; i++) {
+      const lon = (360 / nLongitudes) * i;
+      // North polar cap
+      const thetaN = (90 - lat) * (Math.PI / 180);
+      const phi = lon * (Math.PI / 180);
+      const [xN, yN, zN] = sphericalToCartesian(r0, thetaN, phi);
+      seeds.push({ x: xN, y: yN, z: zN, lat, lon });
+      // South polar cap
+      const thetaS = (90 + lat) * (Math.PI / 180);
+      const [xS, yS, zS] = sphericalToCartesian(r0, thetaS, phi);
+      seeds.push({ x: xS, y: yS, z: zS, lat: -lat, lon });
+    }
+  }
+
   return seeds;
 }

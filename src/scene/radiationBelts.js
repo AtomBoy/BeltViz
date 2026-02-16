@@ -37,6 +37,7 @@ export const BELT_DEFINITIONS = [
 export function buildRadiationBeltGroup(beltSurfaces, options = {}) {
   const group = new THREE.Group();
   const clippingPlanes = options.clippingPlanes || [];
+  const opacity = options.opacity;
 
   for (const belt of beltSurfaces) {
     const def = BELT_DEFINITIONS.find((d) => d.name === belt.name);
@@ -58,8 +59,10 @@ export function buildRadiationBeltGroup(beltSurfaces, options = {}) {
 
       const material = new THREE.MeshPhysicalMaterial({
         color: def.color,
+        emissive: def.color,
+        emissiveIntensity: 0.3,
         transparent: true,
-        opacity: def.opacity,
+        opacity: opacity ?? def.opacity,
         depthWrite: false,
         side: THREE.DoubleSide,
         roughness: 0.8,
@@ -85,6 +88,18 @@ export function disposeRadiationBeltGroup(group) {
   group.traverse((obj) => {
     if (obj.geometry) obj.geometry.dispose();
     if (obj.material) obj.material.dispose();
+  });
+}
+
+/**
+ * Update opacity on all radiation belt meshes.
+ */
+export function updateBeltOpacity(group, opacity) {
+  if (!group) return;
+  group.traverse((obj) => {
+    if (obj.material && obj.material.opacity !== undefined) {
+      obj.material.opacity = opacity;
+    }
   });
 }
 

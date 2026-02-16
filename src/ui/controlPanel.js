@@ -16,6 +16,8 @@ export function createControlPanel(params, callbacks) {
     onBeltRebuild,
     onBeltVisualChange,
     onSatelliteChange,
+    onSolarWindChange,
+    onMagnetopauseChange,
   } = callbacks;
 
   const gui = new GUI({ title: 'BeltViz Controls' });
@@ -27,9 +29,9 @@ export function createControlPanel(params, callbacks) {
     if (params.showIsosurfaces) onIsoRebuild();
     if (params.showInnerBelt || params.showOuterBelt) onBeltRebuild();
   });
-  fieldFolder.add(params, 'numLatitudes', 1, 7, 1).name('Latitude Bands').onChange(onRebuild);
-  fieldFolder.add(params, 'numLongitudes', 4, 16, 2).name('Longitudes').onChange(onRebuild);
-  fieldFolder.add(params, 'tubeRadius', 0.003, 0.02, 0.001).name('Line Thickness').onChange(onVisualChange);
+  fieldFolder.add(params, 'numLatitudes', 1, 12, 1).name('Latitude Bands').onChange(onRebuild);
+  fieldFolder.add(params, 'numLongitudes', 4, 36, 2).name('Longitudes').onChange(onRebuild);
+  fieldFolder.add(params, 'tubeRadius', 0.003, 0.04, 0.001).name('Line Thickness').onChange(onRebuild);
   fieldFolder.add(params, 'showFieldLines').name('Show Field Lines').onChange(onVisualChange);
   fieldFolder.add(params, 'autoRotate').name('Auto Rotate').onChange(onVisualChange);
 
@@ -45,7 +47,7 @@ export function createControlPanel(params, callbacks) {
   isoFolder.add(params, 'isoResolution', { Low: 48, Medium: 64, High: 96 })
     .name('Resolution')
     .onChange(onIsoRebuild);
-  isoFolder.add(params, 'isoOpacity', 0.05, 0.5, 0.01)
+  isoFolder.add(params, 'isoOpacity', 0.05, 0.8, 0.01)
     .name('Opacity')
     .onChange(onIsoVisualChange);
 
@@ -80,6 +82,9 @@ export function createControlPanel(params, callbacks) {
     if (v) onBeltRebuild();
     else onBeltVisualChange();
   });
+  beltFolder.add(params, 'beltOpacity', 0.05, 0.8, 0.01)
+    .name('Opacity')
+    .onChange(onBeltVisualChange);
   beltFolder.close();
 
   // --- Clipping folder ---
@@ -98,6 +103,49 @@ export function createControlPanel(params, callbacks) {
   satFolder.add(params, 'satLongitude', -180, 180, 0.5).name('Longitude').onChange(onSatelliteChange);
   satFolder.add(params, 'satAltitude', 200, 36000, 50).name('Altitude (km)').onChange(onSatelliteChange);
   satFolder.close();
+
+  // --- Solar Wind folder ---
+  const solarFolder = gui.addFolder('Solar Wind');
+
+  const PRESETS = {
+    Quiet: { vSw: 400, nSw: 5, imfBz: 0, dst: 0 },
+    'Moderate Storm': { vSw: 500, nSw: 10, imfBz: -5, dst: -50 },
+    'Severe Storm': { vSw: 700, nSw: 20, imfBz: -15, dst: -150 },
+  };
+
+  solarFolder.add(params, 'solarWindEnabled').name('Enable Solar Wind').onChange(onSolarWindChange);
+
+  // Preset selector (stored as a transient key, not a real param)
+  params._solarPreset = 'Quiet';
+  solarFolder.add(params, '_solarPreset', Object.keys(PRESETS)).name('Preset').onChange((name) => {
+    const p = PRESETS[name];
+    if (!p) return;
+    params.solarWindSpeed = p.vSw;
+    params.solarWindDensity = p.nSw;
+    params.imfBz = p.imfBz;
+    params.dst = p.dst;
+    // Update GUI controllers to reflect new values
+    gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+
+  solarFolder.add(params, 'solarWindSpeed', 300, 800, 10).name('Speed (km/s)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  solarFolder.add(params, 'solarWindDensity', 1, 30, 0.5).name('Density (cm⁻³)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  solarFolder.add(params, 'imfBz', -20, 20, 0.5).name('IMF Bz (nT)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  solarFolder.add(params, 'dst', -200, 50, 5).name('Dst Index (nT)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  solarFolder.add(params, 'sunLongitude', 0, 360, 1).name('Sun Direction (°)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  solarFolder.add(params, 'showMagnetopause').name('Show Magnetopause').onChange(onMagnetopauseChange);
+  solarFolder.close();
 
   return gui;
 }

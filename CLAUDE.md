@@ -72,6 +72,26 @@ coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCube
 
 The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries (inner belt: L=1.2–2, outer belt: L=3–6) rendered as colored semi-transparent shells via `src/scene/radiationBelts.js`.
 
+### Solar wind external field (Phase 3)
+
+Adds external magnetic field from solar wind interaction, producing the classic asymmetric magnetosphere (compressed dayside, stretched nightside tail).
+
+```
+computeB (IGRF internal) + computeExternalB (solar wind) → computeTotalB → field lines, grids, environment
+                                                              via insideMagnetopause fade
+```
+
+- `src/physics/solarWind.js` — External field model with 4 components: magnetopause boundary (Shue 1998), Chapman-Ferraro compression, tail current sheet, ring current. Works in a GSM-like frame rotatable by `sunLonRad`. Pure physics, no DOM.
+- `src/physics/totalField.js` — Thin wrapper: `computeTotalB(r,θ,φ,coeffs,maxDegree,solarWindParams)` returns IGRF+external combined, confined by magnetopause. Falls back to pure IGRF when `solarWindParams` is null/disabled.
+- `src/physics/coordinates.js` — Added `bCartesianToSpherical()` inverse transform for converting Cartesian B vectors back to spherical components.
+- `src/scene/magnetopauseMesh.js` — Parametric surface mesh of the Shue magnetopause boundary, lazy-loaded via dynamic import.
+
+The `solarWindParams` object (`{ vSw, nSw, imfBz, dst, sunLonRad, enabled }`) threads through: `fieldLineTracer` (via `options.solarWindParams`), `magneticEnvironment` (6th parameter). Field lines and the magnetopause mesh show solar wind asymmetry.
+
+**Important**: Scalar field grids (L-shell, |B|) always use pure IGRF — the dipole L-shell approximation (`L = r/(Re*cos²λ_m)`) breaks down with external fields, producing artifacts at the tail current neutral sheet and magnetopause boundary. This is a known limitation of McIlwain L in disturbed fields (Roederer & Lejosne 2018). The correct fix requires Roederer L* (drift shell tracing) or full Tsyganenko model — both deferred.
+
+Storm presets: Quiet (v=400, n=5, Bz=0, Dst=0), Moderate Storm (v=500, n=10, Bz=-5, Dst=-50), Severe Storm (v=700, n=20, Bz=-15, Dst=-150).
+
 ### Satellite environment probe
 
 - `src/physics/magneticEnvironment.js` — Computes L-shell (dipole approximation: `tan(λ_m) = |Br|/(2*Bperp)`, `L = r/(Re*cos²λ_m)`), radiation belt region classification, SAA proximity at any point. Reuses `computeB`.
@@ -89,4 +109,23 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `fieldLineTracer.test.js` — closed field lines return to surface, altitude scaling with latitude, point continuity
 - `marchingCubes.test.js` — sphere isosurface extraction, vertex positions, normals, Earth masking, empty output for out-of-range values
 - `magneticEnvironment.test.js` — L-shell values at equator/latitude, region classification, SAA proximity comparison
+- `solarWind.test.js` — dynamic pressure, standoff distance, magnetopause geometry, GSM transforms, external B components, NaN safety
+- `totalField.test.js` — IGRF passthrough when disabled, subsolar enhancement, magnetopause confinement
 - `satellitePosition.test.js` — geographic-to-physics coordinate conversion, pole positions, altitude offsets
+
+## TODOs based on user feedback
+
+### Imediate issues
+
+[] The radiation belts could be more opaque. Add a control similar to the 'Opacity' control for isosurfaces. Increase the maximum opacity for both controls so the user can give them more substance. This will be useful for the lighting exploration below.
+[] The lighting for the belts and isosurfaces can look strange when they are in the Earth's shadow. Lets explore lighting options starting with making them emmissive.
+[] The field lines 'Line Thickness' control has no apparent effect. Its range might be too small or it might not be wired up propperly.
+[] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
+[] We should show the sun. We should not show the stars because they make it harder to distinguish satellites. The moon would also add good context but we can skip this if it adds too much complexity - it's not really what this visualization is focused on.
+[] The zoom-out limit should be increased to give a better view of the magnetopause and the trailing field lines. We way also want to increase the max size of the field lines as they get much longer with solar wind. Our current model may be too limited.
+
+### Longer term
+
+[] Timeline. The current visualization is static. We'd like to add a timeline and evolve the model over time with controls for moving backward and forward and adjusting rate.
+[] We want to show satellites moving in orbit. There is a tle file here: @public/data/Space-Track.all.3le.txt . We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
+[] Show satellite CAD model on satellite selection. There is an example model in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.

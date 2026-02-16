@@ -8,7 +8,7 @@ export function setupControls(camera, renderer) {
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
   controls.minDistance = 1.5;
-  controls.maxDistance = 25;
+  controls.maxDistance = 80;
   controls.enablePan = false;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.3;

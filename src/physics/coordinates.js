@@ -41,3 +41,24 @@ export function bFieldToCartesian(Br, Bt, Bp, theta, phi) {
 
   return [Bx, By, Bz];
 }
+
+/**
+ * Convert magnetic field from Cartesian (Bx, By, Bz) back to
+ * spherical components (Br, Btheta, Bphi).
+ *
+ * Inverse of bFieldToCartesian — the rotation matrix is orthogonal,
+ * so the inverse is the transpose.
+ */
+export function bCartesianToSpherical(Bx, By, Bz, theta, phi) {
+  const sinT = Math.sin(theta);
+  const cosT = Math.cos(theta);
+  const sinP = Math.sin(phi);
+  const cosP = Math.cos(phi);
+
+  // Transpose of the forward rotation matrix
+  const Br = Bx * sinT * cosP + By * cosT + Bz * sinT * sinP;
+  const Bt = Bx * cosT * cosP - By * sinT + Bz * cosT * sinP;
+  const Bp = -Bx * sinP + Bz * cosP;
+
+  return [Br, Bt, Bp];
+}

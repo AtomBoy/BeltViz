@@ -5,25 +5,29 @@
  * - 'computeGrid': |B| magnitude field (for isosurfaces)
  * - 'computeLShellGrid': L-shell scalar field (for radiation belt boundaries)
  *
+ * When solarWindParams is provided and enabled, uses the combined IGRF + external
+ * field model instead of pure IGRF.
+ *
  * Protocol:
- *   Main → Worker: { type, coeffs, maxDegree, resolution, boundsMin, boundsMax }
+ *   Main → Worker: { type, coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams? }
  *   Worker → Main: { type: 'progress', percent }
  *   Worker → Main: { type: 'gridReady'|'lshellGridReady', grid: Float32Array, ... }
  *                   (grid is transferred, zero-copy)
  */
 
 import { computeB, computeBMagnitude } from './igrf.js';
+import { computeTotalB, computeTotalBMagnitude } from './totalField.js';
 import { cartesianToSpherical } from './coordinates.js';
 import { EARTH_RADIUS_KM, KM_TO_SCENE } from '../utils/constants.js';
 
 self.onmessage = function (e) {
   const { type } = e.data;
-  const { coeffs, maxDegree, resolution, boundsMin, boundsMax } = e.data;
+  const { coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams } = e.data;
 
   if (type === 'computeGrid') {
-    computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax);
+    computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams);
   } else if (type === 'computeLShellGrid') {
-    computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax);
+    computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams);
   }
 };
 
@@ -37,9 +41,10 @@ function sceneToSpherical(sx, sy, sz) {
   return cartesianToSpherical(xKm, yKm, zKm);
 }
 
-function computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax) {
+function computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams) {
   const res = resolution;
   const grid = new Float32Array(res * res * res);
+  const useSolarWind = solarWindParams?.enabled;
 
   const stepX = (boundsMax[0] - boundsMin[0]) / (res - 1);
   const stepY = (boundsMax[1] - boundsMin[1]) / (res - 1);
@@ -62,7 +67,9 @@ function computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax) {
           continue;
         }
 
-        grid[idx] = computeBMagnitude(r, theta, phi, coeffs, maxDegree);
+        grid[idx] = useSolarWind
+          ? computeTotalBMagnitude(r, theta, phi, coeffs, maxDegree, solarWindParams)
+          : computeBMagnitude(r, theta, phi, coeffs, maxDegree);
       }
     }
 
@@ -79,9 +86,10 @@ function computeGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax) {
   );
 }
 
-function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax) {
+function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, solarWindParams) {
   const res = resolution;
   const grid = new Float32Array(res * res * res);
+  const useSolarWind = solarWindParams?.enabled;
 
   const stepX = (boundsMax[0] - boundsMin[0]) / (res - 1);
   const stepY = (boundsMax[1] - boundsMin[1]) / (res - 1);
@@ -105,7 +113,9 @@ function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax) 
         }
 
         // Compute L-shell using dipole approximation from field direction
-        const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, maxDegree);
+        const [Br, Bt, Bp] = useSolarWind
+          ? computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams)
+          : computeB(r, theta, phi, coeffs, maxDegree);
         const Bperp = Math.sqrt(Bt * Bt + Bp * Bp);
 
         if (Bperp < 1e-10) {

@@ -59,6 +59,8 @@ export function buildIsosurfaceGroup(surfaces, options = {}) {
 
     const material = new THREE.MeshPhysicalMaterial({
       color,
+      emissive: color,
+      emissiveIntensity: 0.25,
       transparent: true,
       opacity,
       depthWrite: false,

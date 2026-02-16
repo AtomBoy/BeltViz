@@ -50,32 +50,59 @@ export function createGlobe(scene) {
 }
 
 /**
- * Create a simple starfield background.
+ * Create a sun representation at a given direction.
+ * Includes a glowing sphere and a radial corona sprite.
+ * @param {THREE.Scene} scene
+ * @returns {{ group: THREE.Group, setDirection: (lonRad: number) => void }}
  */
-export function createStarfield(scene) {
-  const count = 2000;
-  const positions = new Float32Array(count * 3);
+export function createSun(scene) {
+  const SUN_DISTANCE = 60; // scene units
 
-  for (let i = 0; i < count; i++) {
-    // Random points on a large sphere
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const r = 200 + Math.random() * 300;
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = r * Math.cos(phi);
+  // Glowing sun sphere
+  const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
+  const sunMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffee88,
+  });
+  const sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+
+  // Corona glow (additive billboard sprite)
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gradient.addColorStop(0, 'rgba(255, 238, 136, 1.0)');
+  gradient.addColorStop(0.3, 'rgba(255, 200, 80, 0.6)');
+  gradient.addColorStop(0.7, 'rgba(255, 160, 40, 0.15)');
+  gradient.addColorStop(1, 'rgba(255, 120, 0, 0.0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 128, 128);
+
+  const coronaTexture = new THREE.CanvasTexture(canvas);
+  const coronaMaterial = new THREE.SpriteMaterial({
+    map: coronaTexture,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  const corona = new THREE.Sprite(coronaMaterial);
+  corona.scale.set(12, 12, 1);
+
+  const sunGroup = new THREE.Group();
+  sunGroup.add(sunMesh);
+  sunGroup.add(corona);
+  sunGroup.visible = false; // hidden until solar wind enabled
+  scene.add(sunGroup);
+
+  function setDirection(lonRad) {
+    sunGroup.position.set(
+      Math.cos(lonRad) * SUN_DISTANCE,
+      0,
+      Math.sin(lonRad) * SUN_DISTANCE
+    );
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  setDirection(0);
 
-  const material = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.5,
-    sizeAttenuation: true,
-  });
-
-  const stars = new THREE.Points(geometry, material);
-  scene.add(stars);
-  return stars;
+  return { group: sunGroup, setDirection };
 }
