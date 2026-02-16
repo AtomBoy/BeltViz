@@ -5,14 +5,10 @@ export function createInfoOverlay() {
   const div = document.createElement('div');
   div.id = 'info-overlay';
   div.innerHTML = `
-    <h3>BeltViz</h3>
-    <p><strong>Earth's Magnetic Field Lines</strong></p>
+    <h3>MagRad-CG</h3>
+    <p><strong>Magnetospheric Radiometric Cybernetic Garden</strong></p>
     <p>Computed from the IGRF-14 spherical harmonic model
     using Gauss coefficients up to degree 13.</p>
-    <p class="legend">
-      <span class="warm">&#9632;</span> Low latitude (outer field)
-      <span class="cool">&#9632;</span> High latitude (inner field)
-    </p>
     <p class="attribution">
       Data: <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">NOAA NCEI IGRF-14</a><br>
       Texture: NASA Blue Marble
@@ -30,11 +26,11 @@ export function createInfoOverlay() {
       background: rgba(0, 5, 20, 0.75);
       color: #c8ddf0;
       padding: 16px 20px;
-      border-radius: 8px;
+      border-radius: 16px;
       font-family: 'Helvetica Neue', Arial, sans-serif;
       font-size: 13px;
       line-height: 1.5;
-      max-width: 320px;
+      max-width: 360px;
       backdrop-filter: blur(8px);
       border: 1px solid rgba(100, 150, 200, 0.2);
       z-index: 10;

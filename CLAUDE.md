@@ -117,15 +117,15 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 
 ### Imediate issues
 
-[] The radiation belts could be more opaque. Add a control similar to the 'Opacity' control for isosurfaces. Increase the maximum opacity for both controls so the user can give them more substance. This will be useful for the lighting exploration below.
-[] The lighting for the belts and isosurfaces can look strange when they are in the Earth's shadow. Lets explore lighting options starting with making them emmissive.
-[] The field lines 'Line Thickness' control has no apparent effect. Its range might be too small or it might not be wired up propperly.
-[] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
-[] We should show the sun. We should not show the stars because they make it harder to distinguish satellites. The moon would also add good context but we can skip this if it adds too much complexity - it's not really what this visualization is focused on.
-[] The zoom-out limit should be increased to give a better view of the magnetopause and the trailing field lines. We way also want to increase the max size of the field lines as they get much longer with solar wind. Our current model may be too limited.
+- [ ] Complete the interrupted work to show the moon and place it in the propper location and implement time-based positioning of everything. See context or ask for more detail.
+- [ ] The field lines had a bug where the simulation stopped before the end of longer field lines becuase they used limits that worked ok in scenarios with no solar wind. A fix was made and it appeared to work, but it turns out that it only worked in the 'Quiet' preset. Stronger solar wind conditions reveal the bug again which shows the field lines going in straight lines at 45 degree angles to the orbital plane. Revisit the previous fix that increased the limits on the field line simulation and ensure they work on very long field lines as seen in the worst-case solar wind scenarios.
+- [ ] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
+- [ ] The info for the satellite is hidden under the ui. Move it to the top left.
+- [ ] The year (epoch) of the IGRF model that's being used should be shown in infoOverlay.js.
 
-### Longer term
+### Longer term - Phase 4, 5, 6 - we're not implementing these yet but keeping them in mind
 
-[] Timeline. The current visualization is static. We'd like to add a timeline and evolve the model over time with controls for moving backward and forward and adjusting rate.
-[] We want to show satellites moving in orbit. There is a tle file here: @public/data/Space-Track.all.3le.txt . We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
-[] Show satellite CAD model on satellite selection. There is an example model in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.
+- [ ] Animation over time.
+- [ ] Solar wind driven by actual historical data. Hourly resoloution is probably a good start. See [https://www.ncei.noaa.gov/cloud-access/space-weather-portal/overview?sat=DSCOVR] for likely data source.
+- [ ] We want to show satellites moving in orbit. There is a tle file here: @public/data/Space-Track.all.3le.txt . We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
+- [ ] Show satellite CAD model on satellite selection. There is an example CAD file in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.

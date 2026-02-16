@@ -1,4 +1,5 @@
-# BeltViz
+# Magnetospheric Radiometric Cybernetic Garden
+## MagRad-CG
 
 3D visualization of Earth's magnetic field lines computed from the IGRF-14 (International Geomagnetic Reference Field) spherical harmonic model.
 
