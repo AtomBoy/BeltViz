@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vitest run:*)"
+      "Bash(npx vitest run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "WebFetch(domain:svs.gsfc.nasa.gov)",
+      "WebFetch(domain:www.physics.purdue.edu)"
     ]
   }
 }

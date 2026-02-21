@@ -74,19 +74,20 @@ The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-
 
 ### Solar wind external field (Phase 3)
 
-Adds external magnetic field from solar wind interaction, producing the classic asymmetric magnetosphere (compressed dayside, stretched nightside tail).
+Adds external magnetic field from solar wind interaction using the **Tsyganenko T89c** empirical model, producing the classic asymmetric magnetosphere (compressed dayside, stretched nightside tail).
 
 ```
-computeB (IGRF internal) + computeExternalB (solar wind) → computeTotalB → field lines, grids, environment
-                                                              via insideMagnetopause fade
+computeB (IGRF internal) + computeExternalB (T89c) → computeTotalB → field lines, grids, environment
+                                                        via insideMagnetopause fade
 ```
 
-- `src/physics/solarWind.js` — External field model with 4 components: magnetopause boundary (Shue 1998), Chapman-Ferraro compression, tail current sheet, ring current. Works in a GSM-like frame rotatable by `sunLonRad`. Pure physics, no DOM.
+- `src/physics/t89.js` — JavaScript port of the T89c model (Tsyganenko 1989). Takes GSM position in Earth radii + Kp level (iopt 1–7) + dipole tilt (ps), returns `[bx,by,bz]` nT. 30-coefficient × 7-Kp parameter matrix. Ported from Python geopack (https://github.com/tsssss/geopack).
+- `src/physics/solarWind.js` — Calls T89c for external field. Also contains: `solarWindToKp()` (maps dst/vSw/nSw → iopt 1–7), Shue 1998 magnetopause (`computeMagnetopauseDistance`), GSM transforms (`toGSM`/`fromGSM`), and `insideMagnetopause()` boundary fade. Pure physics, no DOM.
 - `src/physics/totalField.js` — Thin wrapper: `computeTotalB(r,θ,φ,coeffs,maxDegree,solarWindParams)` returns IGRF+external combined, confined by magnetopause. Falls back to pure IGRF when `solarWindParams` is null/disabled.
 - `src/physics/coordinates.js` — Added `bCartesianToSpherical()` inverse transform for converting Cartesian B vectors back to spherical components.
 - `src/scene/magnetopauseMesh.js` — Parametric surface mesh of the Shue magnetopause boundary, lazy-loaded via dynamic import.
 
-The `solarWindParams` object (`{ vSw, nSw, imfBz, dst, sunLonRad, enabled }`) threads through: `fieldLineTracer` (via `options.solarWindParams`), `magneticEnvironment` (6th parameter). Field lines and the magnetopause mesh show solar wind asymmetry.
+The `solarWindParams` object (`{ vSw, nSw, imfBz, dst, sunLonRad, ps, enabled }`) threads through: `fieldLineTracer` (via `options.solarWindParams`), `magneticEnvironment` (6th parameter). Field lines and the magnetopause mesh show solar wind asymmetry. `ps` is the dipole tilt angle (radians), approximated from solar declination.
 
 **Important**: Scalar field grids (L-shell, |B|) always use pure IGRF — the dipole L-shell approximation (`L = r/(Re*cos²λ_m)`) breaks down with external fields, producing artifacts at the tail current neutral sheet and magnetopause boundary. This is a known limitation of McIlwain L in disturbed fields (Roederer & Lejosne 2018). The correct fix requires Roederer L* (drift shell tracing) or full Tsyganenko model — both deferred.
 
@@ -109,16 +110,23 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `fieldLineTracer.test.js` — closed field lines return to surface, altitude scaling with latitude, point continuity
 - `marchingCubes.test.js` — sphere isosurface extraction, vertex positions, normals, Earth masking, empty output for out-of-range values
 - `magneticEnvironment.test.js` — L-shell values at equator/latitude, region classification, SAA proximity comparison
-- `solarWind.test.js` — dynamic pressure, standoff distance, magnetopause geometry, GSM transforms, external B components, NaN safety
+- `t89.test.js` — T89c model: iopt clamping, N-S antisymmetry, tail lobe directions, dayside CF, dipole tilt effect, NaN safety, magnitude range
+- `solarWind.test.js` — dynamic pressure, standoff distance, magnetopause geometry, GSM transforms, solarWindToKp mapping, external B behaviors, NaN safety
 - `totalField.test.js` — IGRF passthrough when disabled, subsolar enhancement, magnetopause confinement
 - `satellitePosition.test.js` — geographic-to-physics coordinate conversion, pole positions, altitude offsets
+
+## Documentation & Citations
+
+When adding a new physics model, algorithm, or data source:
+- Add an entry to the **Data Sources & References** section of `README.md` with author, title, journal/source, year, and DOI or URL where available.
+- If porting from a third-party library, cite both the original paper and the library used as the implementation reference.
 
 ## TODOs based on user feedback
 
 ### Imediate issues
 
-- [ ] Complete the interrupted work to show the moon and place it in the propper location and implement time-based positioning of everything. See context or ask for more detail.
-- [ ] The field lines had a bug where the simulation stopped before the end of longer field lines becuase they used limits that worked ok in scenarios with no solar wind. A fix was made and it appeared to work, but it turns out that it only worked in the 'Quiet' preset. Stronger solar wind conditions reveal the bug again which shows the field lines going in straight lines at 45 degree angles to the orbital plane. Revisit the previous fix that increased the limits on the field line simulation and ensure they work on very long field lines as seen in the worst-case solar wind scenarios.
+- [X] Complete the interrupted work to show the moon and place it in the propper location and implement time-based positioning of everything. See context or ask for more detail.
+- [X] The field lines had a bug where the simulation stopped before the end of longer field lines becuase they used limits that worked ok in scenarios with no solar wind. A fix was made and it appeared to work, but it turns out that it only worked in the 'Quiet' preset. Stronger solar wind conditions reveal the bug again which shows the field lines going in straight lines at 45 degree angles to the orbital plane. Revisit the previous fix that increased the limits on the field line simulation and ensure they work on very long field lines as seen in the worst-case solar wind scenarios. **Fixed by replacing the hand-crafted model with T89c (Tsyganenko 1989).**
 - [ ] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
 - [ ] The info for the satellite is hidden under the ui. Move it to the top left.
 - [ ] The year (epoch) of the IGRF model that's being used should be shown in infoOverlay.js.
@@ -127,5 +135,5 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 
 - [ ] Animation over time.
 - [ ] Solar wind driven by actual historical data. Hourly resoloution is probably a good start. See [https://www.ncei.noaa.gov/cloud-access/space-weather-portal/overview?sat=DSCOVR] for likely data source.
-- [ ] We want to show satellites moving in orbit. There is a tle file here: @public/data/Space-Track.all.3le.txt . We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
+- [ ] We want to show satellites moving in orbit based on a tle file (also called a 3le file). We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
 - [ ] Show satellite CAD model on satellite selection. There is an example CAD file in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.

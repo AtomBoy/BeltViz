@@ -105,7 +105,7 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   const baseDs = options.stepSize || 200;
   const maxSteps = options.maxSteps || 10000;
   const rMin = options.rMin || EARTH_RADIUS_KM * 0.99;
-  const rMax = options.rMax || EARTH_RADIUS_KM * 40;
+  const rMax = options.rMax || EARTH_RADIUS_KM * 25;
   const maxDegree = options.maxDegree;
   const solarWindParams = options.solarWindParams;
 

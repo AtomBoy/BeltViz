@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { createGlobe, createSun } from './scene/globe.js';
+import { createGlobe, createSun, createMoon } from './scene/globe.js';
+import { solarPosition, lunarPosition } from './utils/astronomy.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
 import { buildFieldLineGroup } from './scene/fieldLines.js';
@@ -63,8 +64,16 @@ const params = {
   solarWindDensity: 5,
   imfBz: 0,
   dst: 0,
-  sunLongitude: 0,
+  sunLongitude: 0,      // internal — computed from datetime, not a user slider
+  sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
+  // Date & Time params
+  datetimeString: (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 16);
+  })(),
+  showMoon: true,
 };
 
 /**
@@ -96,6 +105,7 @@ function getSolarWindParams() {
     imfBz: params.imfBz,
     dst: params.dst,
     sunLonRad: params.sunLongitude * Math.PI / 180,
+    ps: params.sunDeclination * Math.PI / 180, // dipole tilt ≈ solar declination
   };
 }
 
@@ -144,6 +154,7 @@ camera.position.set(0, 1.5, 4);
 createGlobe(scene);
 const { sunLight } = setupLighting(scene);
 const sun = createSun(scene);
+const moon = createMoon(scene);
 const controls = setupControls(camera, renderer);
 
 // --- Clipping planes ---
@@ -604,14 +615,49 @@ function updateSatelliteProbe() {
 
 function updateSunPosition() {
   const lonRad = params.sunLongitude * Math.PI / 180;
-  sun.setDirection(lonRad);
-  sun.group.visible = params.solarWindEnabled;
+  const decRad = params.sunDeclination * Math.PI / 180;
+  sun.setDirection(lonRad, decRad);
+  sun.group.visible = true;
   // Move directional light to match sun direction
+  const cosD = Math.cos(decRad);
   sunLight.position.set(
-    Math.cos(lonRad) * 5,
-    3,
-    Math.sin(lonRad) * 5
+    cosD * Math.cos(lonRad) * 5,
+    Math.sin(decRad) * 5,
+    cosD * Math.sin(lonRad) * 5
   );
+}
+
+/**
+ * Compute sun and moon positions from the current datetimeString and
+ * update the scene. Triggers a solar wind rebuild if solar wind is active.
+ */
+function updateDatetime() {
+  const date = new Date(params.datetimeString);
+  if (isNaN(date.getTime())) return;
+
+  // Sun position
+  const sunPos = solarPosition(date);
+  params.sunLongitude = (sunPos.longitudeRad * 180 / Math.PI + 360) % 360;
+  params.sunDeclination = sunPos.declinationRad * 180 / Math.PI;
+  updateSunPosition();
+
+  // Moon position
+  if (params.showMoon) {
+    const moonPos = lunarPosition(date);
+    moon.setPosition(moonPos.longitudeRad, moonPos.declinationRad, moonPos.distanceEarthRadii);
+    moon.setVisible(true);
+  } else {
+    moon.setVisible(false);
+  }
+
+  // Rebuild field lines (and related) if solar wind uses the sun direction
+  if (params.solarWindEnabled) {
+    rebuildFieldLines();
+    if (params.showIsosurfaces) rebuildIsosurfaces();
+    if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
+    if (params.showSatellite) updateSatelliteProbe();
+    if (params.showMagnetopause) rebuildMagnetopause();
+  }
 }
 
 function onSolarWindChange() {
@@ -663,6 +709,7 @@ createControlPanel(params, {
   onSatelliteChange: updateSatelliteProbe,
   onSolarWindChange,
   onMagnetopauseChange,
+  onDatetimeChange: updateDatetime,
 });
 
 // --- Resize ---
@@ -682,6 +729,7 @@ function animate() {
 // --- Init ---
 async function init() {
   await loadCoefficients();
+  updateDatetime(); // position sun and moon from default date
   await rebuildFieldLines();
   animate();
 }

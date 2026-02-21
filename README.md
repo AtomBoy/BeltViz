@@ -19,14 +19,18 @@ Field lines are computed entirely client-side: the app evaluates the spherical h
 
 ### Solar Wind & Magnetosphere
 
-When enabled, a simplified external field model adds solar wind effects that compress the dayside magnetosphere and stretch the nightside into a magnetotail — the classic asymmetric magnetosphere shape. Four additive components:
+When enabled, external solar wind effects are computed using the **Tsyganenko T89c empirical model** (Tsyganenko 1989, updated 1992). T89c is a semi-empirical model fit to satellite data that computes the complete external magnetosphere field from a single parameterized function call. It captures all major current systems simultaneously:
 
-1. **Magnetopause boundary** (Shue 1998) — confines the field within a realistic magnetopause shape
-2. **Chapman-Ferraro compression** — enhances the dayside field from magnetopause currents
-3. **Tail current sheet** — stretches nightside field lines into anti-parallel lobes
-4. **Ring current** — uniform southward field during geomagnetic storms (Dst-driven)
+- **Magnetotail current sheet** (warped, parabolic shape) — stretches nightside field lines into anti-parallel lobes
+- **Ring current** (symmetric + partial) — southward field in the inner magnetosphere, enhanced during storms
+- **Closure currents** — maintain divergence-free topology
+- **Chapman-Ferraro + Birkeland currents** — compress the dayside field
 
-Storm presets range from quiet (standoff ~12 Re) to severe storm (standoff ~6 Re). All field lines, isosurfaces, and radiation belts respond to solar wind conditions in real time. A semi-transparent magnetopause surface can be toggled on to show the boundary.
+T89c is parameterized by a single Kp index (0–6+), mapped from the solar wind inputs (speed, density, IMF Bz, Dst). The dipole tilt angle (seasonal variation) is included via the solar declination.
+
+The **Shue 1998** magnetopause model is retained as an outer boundary: T89c computes field values everywhere, and the Shue surface provides a smooth fade to zero outside the magnetopause.
+
+Storm presets range from quiet (Kp=0, standoff ~12 Re) to severe storm (Kp=6+, standoff ~6 Re). All field lines respond to solar wind conditions in real time. A semi-transparent magnetopause surface can be toggled on to show the boundary.
 
 ### Controls
 
@@ -66,15 +70,17 @@ public/
 
 - **IGRF-14 coefficients**: [NOAA NCEI](https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field) / [IAGA V-MOD](https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
 - **Earth texture**: NASA Blue Marble
-- **Magnetopause model**: Shue et al. 1998, "Magnetopause location under extreme solar wind conditions", JGR 103(A8):17691-17700 ([doi:10.1029/98JA01103](https://doi.org/10.1029/98JA01103))
-- **Magnetopause shape**: Shue et al. 1997, "A new functional form to study the solar wind control of the magnetopause size and shape", JGR 102(A5):9497-9511 ([doi:10.1029/97JA00196](https://doi.org/10.1029/97JA00196))
+- **T89c external field model**: Tsyganenko N.A., "A magnetospheric magnetic field model with a warped tail current sheet", *Planet. Space Sci.*, v.37, pp.5–20, 1989. Updated 1992 with tilt-angle-dependent tail terms.
+- **T89c JavaScript implementation**: Ported from the Python [geopack](https://github.com/tsssss/geopack) library by Sheng Tian, which is itself a port of Tsyganenko's original Fortran code.
+- **Magnetopause model**: Shue et al. 1998, "Magnetopause location under extreme solar wind conditions", *JGR* 103(A8):17691-17700 ([doi:10.1029/98JA01103](https://doi.org/10.1029/98JA01103))
+- **Magnetopause shape**: Shue et al. 1997, "A new functional form to study the solar wind control of the magnetopause size and shape", *JGR* 102(A5):9497-9511 ([doi:10.1029/97JA00196](https://doi.org/10.1029/97JA00196))
 
 ## Roadmap
 
 - [x] IGRF-14 magnetic field lines (Phase 1)
 - [x] L-shell/|B| isosurfaces, radiation belts, clipping planes, satellite probe (Phase 2)
-- [x] Solar wind interaction — magnetopause, compression, tail, ring current (Phase 3)
-- [ ] Full Tsyganenko T96 external field model (semi-empirical, ~2000+ lines — see [plan notes](https://geo.phys.spbu.ru/~tsyganenko/empirical-models/) and [CCMC](https://ccmc.gsfc.nasa.gov/models/Tsyganenko%20Magnetic%20Field~T96/))
+- [x] Solar wind interaction — T89c empirical external field, Shue magnetopause (Phase 3)
+- [ ] Tsyganenko T96/T01 model for multi-parameter storm driving (requires 6 SW inputs vs T89c's single Kp)
 - [ ] Van Allen radiation belt particle visualization
 - [ ] Satellite orbit display (SGP4/TLE)
 - [ ] Time-varying field animation using secular variation coefficients

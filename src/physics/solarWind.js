@@ -1,20 +1,22 @@
 /**
  * Solar wind external magnetic field model.
  *
- * Simplified but physically-motivated model with four components:
- * 1. Magnetopause boundary (Shue 1998) — confines field inside magnetosphere
- * 2. Chapman-Ferraro compression — enhances dayside field
- * 3. Tail current sheet — stretches nightside into magnetotail
- * 4. Ring current — uniform southward field during storms (Dst)
+ * External field is computed by the Tsyganenko T89c empirical model, which
+ * covers all major current systems: magnetotail, ring current, closure currents,
+ * and Chapman-Ferraro + Birkeland currents. T89 is parameterized by a single
+ * Kp index (0–6+) mapped from the solar wind parameters.
  *
- * All computations in Cartesian km coordinates with configurable Sun direction.
+ * The magnetopause boundary (Shue 1998) is retained as an outer confinement
+ * envelope — T89 does not enforce a hard boundary cutoff.
  *
  * References:
+ * - Tsyganenko N.A., Planet. Space Sci., v.37, pp.5-20, 1989 (T89 model)
  * - Shue et al. 1997, JGR 102(A5):9497-9511
  * - Shue et al. 1998, JGR 103(A8):17691-17700
  */
 
 import { EARTH_RADIUS_KM } from '../utils/constants.js';
+import { t89 } from './t89.js';
 
 const Re = EARTH_RADIUS_KM;
 
@@ -48,17 +50,6 @@ export function computeStandoffDistance(Dp, imfBz) {
 }
 
 /**
- * Compute magnetopause flaring parameter alpha (Shue 1998).
- *
- * @param {number} Dp - Dynamic pressure in nPa
- * @param {number} imfBz - IMF Bz in nT
- * @returns {number} Flaring parameter (dimensionless)
- */
-export function computeFlaringParameter(Dp, imfBz) {
-  return (0.58 - 0.007 * imfBz) * (1 + 0.024 * Math.log(Dp));
-}
-
-/**
  * Compute magnetopause distance at a given angle from the Sun-Earth line.
  *
  * @param {number} thetaSun - Angle from Sun-Earth line in radians [0, pi]
@@ -68,9 +59,31 @@ export function computeFlaringParameter(Dp, imfBz) {
  */
 export function computeMagnetopauseDistance(thetaSun, Dp, imfBz) {
   const r0 = computeStandoffDistance(Dp, imfBz);
-  const alpha = computeFlaringParameter(Dp, imfBz);
+  const alpha = (0.58 - 0.007 * imfBz) * (1 + 0.024 * Math.log(Dp));
   const cosTheta = Math.cos(Math.max(0, Math.min(Math.PI * 0.999, thetaSun)));
   return r0 * Math.pow(2 / (1 + cosTheta), alpha);
+}
+
+/**
+ * Map solar wind parameters to a T89 Kp level (iopt 1-7).
+ *
+ * Kp is primarily driven by Dst (geomagnetic disturbance index).
+ * Kp ≈ -Dst/15 maps our storm presets sensibly:
+ *   Quiet  (Dst=0):    Kp=0 → iopt=1
+ *   Moderate (Dst=-50): Kp≈3 → iopt=4
+ *   Severe (Dst=-150):  Kp=6+ → iopt=7
+ *
+ * A small dynamic pressure contribution is added for high-speed streams.
+ *
+ * @param {object} params - { dst, vSw, nSw }
+ * @returns {number} iopt (1-7)
+ */
+export function solarWindToKp({ dst, vSw, nSw }) {
+  const Dp = computeDynamicPressure(vSw, nSw);
+  const kpFromDst = Math.min(6, Math.max(0, -dst / 15));
+  const kpFromDp  = Math.min(2, Math.max(0, (Dp - 2) / 1.5));
+  const kp = Math.min(6, kpFromDst + 0.2 * kpFromDp);
+  return Math.min(7, Math.max(1, Math.round(kp) + 1));
 }
 
 /**
@@ -88,9 +101,6 @@ export function computeMagnetopauseDistance(thetaSun, Dp, imfBz) {
 export function toGSM(x, y, z, sunLonRad) {
   const cosL = Math.cos(sunLonRad);
   const sinL = Math.sin(sunLonRad);
-  // Sun direction in scene XZ plane: [cos(lon), 0, sin(lon)]
-  // x_gsm = dot(pos, sunDir) = x*cos + z*sin
-  // y_gsm = dot(pos, duskDir) where duskDir = [-sin(lon), 0, cos(lon)]
   const xGsm = x * cosL + z * sinL;
   const yGsm = -x * sinL + z * cosL;
   const zGsm = y; // scene Y = GSM Z (northward)
@@ -109,7 +119,6 @@ export function toGSM(x, y, z, sunLonRad) {
 export function fromGSM(bxGsm, byGsm, bzGsm, sunLonRad) {
   const cosL = Math.cos(sunLonRad);
   const sinL = Math.sin(sunLonRad);
-  // Inverse rotation (transpose of the rotation matrix in toGSM)
   const Bx = bxGsm * cosL - byGsm * sinL;
   const Bz = bxGsm * sinL + byGsm * cosL;
   const By = bzGsm; // GSM Z → scene Y
@@ -135,26 +144,19 @@ export function insideMagnetopause(xKm, yKm, zKm, solarWindParams) {
 
   const [xGsm, yGsm, zGsm] = toGSM(xKm, yKm, zKm, sunLonRad);
 
-  // Distance from Earth in Re
   const rRe = Math.sqrt(xKm * xKm + yKm * yKm + zKm * zKm) / Re;
-  if (rRe < 0.1) return 1.0; // Near origin, always inside
+  if (rRe < 0.1) return 1.0;
 
-  // Angle from Sun-Earth line (in GSM frame, x_gsm is sunward)
   const rGsm = Math.sqrt(xGsm * xGsm + yGsm * yGsm + zGsm * zGsm);
   const thetaSun = Math.acos(Math.max(-1, Math.min(1, xGsm / rGsm)));
-
-  // Magnetopause distance at this angle
   const rMp = computeMagnetopauseDistance(thetaSun, Dp, imfBz);
 
-  // Smooth transition over ~0.5 Re at boundary
   const transitionWidth = 0.5; // Re
-  const distFromBoundary = rMp - rRe;
-  return smoothstep(distFromBoundary, -transitionWidth, transitionWidth);
+  return smoothstep(rMp - rRe, -transitionWidth, transitionWidth);
 }
 
 /**
  * Smooth step function (cubic Hermite interpolation).
- * Returns 0 when x <= edge0, 1 when x >= edge1, smooth between.
  */
 function smoothstep(x, edge0, edge1) {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
@@ -162,77 +164,29 @@ function smoothstep(x, edge0, edge1) {
 }
 
 /**
- * Compute the external magnetic field at a point in scene Cartesian coordinates.
- *
- * Sum of Chapman-Ferraro compression, tail current sheet, and ring current.
- * Result is in nT, scene Cartesian frame.
+ * Compute the external magnetic field at a point using the T89 model.
  *
  * @param {number} xKm - Scene X in km
  * @param {number} yKm - Scene Y in km
  * @param {number} zKm - Scene Z in km
- * @param {object} solarWindParams - { vSw, nSw, imfBz, dst, sunLonRad, enabled }
+ * @param {object} solarWindParams - { vSw, nSw, imfBz, dst, sunLonRad, ps, enabled }
  * @returns {number[]} [Bx, By, Bz] external field in nT (scene frame)
  */
 export function computeExternalB(xKm, yKm, zKm, solarWindParams) {
   if (!solarWindParams?.enabled) return [0, 0, 0];
 
-  const { imfBz, dst, sunLonRad } = solarWindParams;
-  const Dp = computeDynamicPressure(solarWindParams.vSw, solarWindParams.nSw);
+  const { sunLonRad, ps = 0 } = solarWindParams;
+  const iopt = solarWindToKp(solarWindParams);
 
+  // Convert scene km → GSM Earth radii (T89 expects Re)
   const [xGsm, yGsm, zGsm] = toGSM(xKm, yKm, zKm, sunLonRad);
+  const xRe = xGsm / Re;
+  const yRe = yGsm / Re;
+  const zRe = zGsm / Re;
 
-  // Distance from Earth
-  const rKm = Math.sqrt(xKm * xKm + yKm * yKm + zKm * zKm);
-  const rRe = rKm / Re;
+  // T89 external field in nT (GSM frame)
+  const [bxGsm, byGsm, bzGsm] = t89(iopt, ps, xRe, yRe, zRe);
 
-  if (rRe < 0.1) return [0, 0, 0]; // Avoid singularity near origin
-
-  // GSM distance and angle
-  const rGsm = Math.sqrt(xGsm * xGsm + yGsm * yGsm + zGsm * zGsm);
-  const thetaSun = Math.acos(Math.max(-1, Math.min(1, xGsm / rGsm)));
-
-  // === Component 1: Chapman-Ferraro compression (dayside) ===
-  // The CF field is generated by magnetopause currents. It's strongest near the
-  // magnetopause and negligible at Earth's surface. Modeled as growing outward
-  // as (r/r0)^2, so at Earth's surface (r/r0 ≈ 0.1) the contribution is ~1%
-  // of the peak, matching the image dipole fall-off behavior.
-  const r0 = computeStandoffDistance(Dp, imfBz);
-  const b0Cf = 30 * Math.pow(Dp / 2, 1 / 3); // nT at magnetopause nose
-  const cosThetaSun = Math.cos(thetaSun);
-  const rFactor = Math.min(1, (rRe / r0) * (rRe / r0)); // (r/r0)^2, capped at 1
-  const cfStrength = b0Cf * rFactor * Math.max(0, cosThetaSun) * Math.max(0, cosThetaSun);
-  // B_cf is along the dipole axis (GSM Z = northward)
-  const bCfGsm = [0, 0, cfStrength];
-
-  // === Component 2: Tail current sheet (nightside) ===
-  const D = 3 * Re; // Current sheet half-thickness in km
-  const b0Tail = 35 * Math.pow(Dp / 2, 0.5) * (1 + Math.abs(dst) / 80); // nT
-  // Ramp on for nightside: f(x_gsm) approaches 1 for x_gsm << -3 Re
-  const tailRamp = 0.5 * (1 - Math.tanh((xGsm / Re + 3) / 2));
-  // Lobe field: Bx = B0 * tanh(z_gsm / D) pointing sunward in north lobe
-  const tanhZ = Math.tanh(zGsm / D);
-  const coshZ = Math.cosh(zGsm / D);
-  const bTailX = b0Tail * tanhZ * tailRamp;
-  // Vertical convergence: Bz contribution
-  const rCyl = Math.sqrt(xGsm * xGsm + yGsm * yGsm);
-  const bTailZ = (rCyl > 0.1 * Re)
-    ? -b0Tail * (D / (rCyl * coshZ * coshZ)) * tailRamp
-    : 0;
-  const bTailGsm = [bTailX, 0, bTailZ];
-
-  // === Component 3: Ring current (storm-time) ===
-  // Uniform southward field: Dst (negative during storms) weakens the dipole
-  // The 0.8 factor accounts for induced currents
-  const bRingZ = dst * 0.8; // nT, negative Dst → southward (negative Z_gsm)
-  const bRingGsm = [0, 0, bRingZ];
-
-  // Sum in GSM frame
-  const bExtGsm = [
-    bCfGsm[0] + bTailGsm[0] + bRingGsm[0],
-    bCfGsm[1] + bTailGsm[1] + bRingGsm[1],
-    bCfGsm[2] + bTailGsm[2] + bRingGsm[2],
-  ];
-
-  // Transform back to scene frame
-  return fromGSM(bExtGsm[0], bExtGsm[1], bExtGsm[2], sunLonRad);
+  // Transform back to scene Cartesian frame
+  return fromGSM(bxGsm, byGsm, bzGsm, sunLonRad);
 }
