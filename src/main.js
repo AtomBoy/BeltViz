@@ -182,28 +182,7 @@ async function rebuildFieldLines(morphDuration = 8200) {
 
   // Snapshot solar wind params once before the trace loop so all seeds use a
   // consistent sun position (params.sunLongitude changes every frame during playback).
-  //
-  // For long periodic morphs (> 1.5 s), target the sun position at morph-end so the
-  // field lines "arrive" aligned with the sun when the transition completes.
-  // For short user-action morphs, use the current sim time as-is.
-  let swParams = null;
-  if (params.solarWindEnabled) {
-    if (morphDuration > 1500 && timeline) {
-      const targetIso = timeline.getSimTimeAt(morphDuration);
-      const sp = solarPosition(new Date(targetIso));
-      swParams = {
-        enabled: true,
-        vSw: params.solarWindSpeed,
-        nSw: params.solarWindDensity,
-        imfBz: params.imfBz,
-        dst: params.dst,
-        sunLonRad: sp.longitudeRad,
-        ps: sp.declinationRad,
-      };
-    } else {
-      swParams = getSolarWindParams(); // current sim time
-    }
-  }
+  const swParams = getSolarWindParams();
 
   const latitudes = LATITUDE_SETS[params.numLatitudes - 1];
   const swActive = params.solarWindEnabled;
