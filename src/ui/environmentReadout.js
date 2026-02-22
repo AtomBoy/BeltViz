@@ -27,8 +27,8 @@ function ensureReadoutElement() {
   style.textContent = `
     #env-readout {
       position: fixed;
-      top: 20px;
-      right: 20px;
+      top: 155px;
+      left: 20px;
       background: rgba(0, 5, 20, 0.8);
       color: #c8ddf0;
       padding: 12px 16px;

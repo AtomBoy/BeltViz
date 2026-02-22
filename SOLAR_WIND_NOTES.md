@@ -18,11 +18,9 @@ The Space Weather Modeling Framework (SWMF) is probably too involved and compute
 
 # Previously considered
 
-- **IGRF-14 coefficients**: [NOAA NCEI](https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field) / [IAGA V-MOD](https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
-- **Earth texture**: NASA Blue Marble
 - **Magnetopause model**: Shue et al. 1998, "Magnetopause location under extreme solar wind conditions", JGR 103(A8):17691-17700 ([doi:10.1029/98JA01103](https://doi.org/10.1029/98JA01103))
 - **Magnetopause shape**: Shue et al. 1997, "A new functional form to study the solar wind control of the magnetopause size and shape", JGR 102(A5):9497-9511 ([doi:10.1029/97JA00196](https://doi.org/10.1029/97JA00196))
-- Full Tsyganenko T96 external field model (semi-empirical, ~2000+ lines — see [plan notes](https://geo.phys.spbu.ru/~tsyganenko/empirical-models/) and [CCMC](https://ccmc.gsfc.nasa.gov/models/Tsyganenko%20Magnetic%20Field~T96/)) This model was considered early on and we decided it was too much work. It might be time to commit to doing this work to at least establish a baseline.
+- **Full Tsyganenko T96 external field model** (semi-empirical, ~2000+ lines see [plan notes](https://geo.phys.spbu.ru/~tsyganenko/empirical-models/) and [CCMC](https://ccmc.gsfc.nasa.gov/models/Tsyganenko%20Magnetic%20Field~T96/)) This model was considered early on and we decided it was too much work. It might be time to commit to doing this work to at least establish a baseline.
 
 # Our Goal
 

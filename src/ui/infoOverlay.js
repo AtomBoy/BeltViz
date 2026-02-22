@@ -7,6 +7,7 @@ export function createInfoOverlay() {
   div.innerHTML = `
     <h3>MagRad-CG</h3>
     <p><strong>Magnetospheric Radiometric Cybernetic Garden</strong></p>
+    <p><a href="https://www.atomodo.com/">AtOmOdO</a></p>
     <p>Computed from the IGRF-14 spherical harmonic model
     using Gauss coefficients up to degree 13.</p>
     <p class="attribution">
@@ -21,7 +22,7 @@ export function createInfoOverlay() {
   style.textContent = `
     #info-overlay {
       position: fixed;
-      bottom: 20px;
+      top: 20px;
       left: 20px;
       background: rgba(0, 5, 20, 0.75);
       color: #c8ddf0;

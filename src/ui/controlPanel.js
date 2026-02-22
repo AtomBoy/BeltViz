@@ -18,7 +18,6 @@ export function createControlPanel(params, callbacks) {
     onSatelliteChange,
     onSolarWindChange,
     onMagnetopauseChange,
-    onDatetimeChange,
   } = callbacks;
 
   const gui = new GUI({ title: 'BeltViz Controls' });
@@ -104,24 +103,6 @@ export function createControlPanel(params, callbacks) {
   satFolder.add(params, 'satLongitude', -180, 180, 0.5).name('Longitude').onChange(onSatelliteChange);
   satFolder.add(params, 'satAltitude', 200, 36000, 50).name('Altitude (km)').onChange(onSatelliteChange);
   satFolder.close();
-
-  // --- Date & Time folder ---
-  const dtFolder = gui.addFolder('Date & Time');
-
-  dtFolder.add(params, 'datetimeString').name('Date/Time (local)').onChange(() => {
-    onDatetimeChange();
-    gui.controllersRecursive().forEach((c) => c.updateDisplay());
-  });
-
-  dtFolder.add(params, 'showMoon').name('Show Moon').onChange(onDatetimeChange);
-
-  dtFolder.add({
-    setNow: () => {
-      params.datetimeString = new Date().toISOString().slice(0, 16);
-      gui.controllersRecursive().forEach((c) => c.updateDisplay());
-      onDatetimeChange();
-    },
-  }, 'setNow').name('Set to Now');
 
   // --- Solar Wind folder ---
   const solarFolder = gui.addFolder('Solar Wind');

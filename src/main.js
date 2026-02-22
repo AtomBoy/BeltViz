@@ -3,11 +3,12 @@ import { createGlobe, createSun, createMoon } from './scene/globe.js';
 import { solarPosition, lunarPosition } from './utils/astronomy.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
-import { buildFieldLineGroup } from './scene/fieldLines.js';
+import { buildFieldLineGroup, createFieldLineMesh, TUBE_SEGMENTS } from './scene/fieldLines.js';
 import { traceFieldLine, generateSeedPoints } from './physics/fieldLineTracer.js';
 import { latitudeToColor } from './utils/colors.js';
 import { createControlPanel } from './ui/controlPanel.js';
 import { createInfoOverlay } from './ui/infoOverlay.js';
+import { createTimeline } from './ui/timeline.js';
 import { extractIsosurface } from './physics/marchingCubes.js';
 import {
   buildIsosurfaceGroup,
@@ -33,12 +34,12 @@ import { KM_TO_SCENE } from './utils/constants.js';
 
 // --- Params (mutable, controlled by GUI) ---
 const params = {
-  maxDegree: 1, // start with dipole
+  maxDegree: 13, // start with highest IGRF-14 degree.
   numLatitudes: 4,
   numLongitudes: 8,
   tubeRadius: 0.008,
   showFieldLines: true,
-  autoRotate: true,
+  autoRotate: false,
   // Isosurface params
   showIsosurfaces: false,
   isoMode: 'lShell', // 'lShell' or 'fieldStrength'
@@ -67,13 +68,12 @@ const params = {
   sunLongitude: 0,      // internal — computed from datetime, not a user slider
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
-  // Date & Time params
+  // Date & Time params (internal — driven by timeline, not lil-gui)
   datetimeString: (() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
     return d.toISOString().slice(0, 16);
   })(),
-  showMoon: true,
 };
 
 /**
@@ -177,16 +177,32 @@ async function loadCoefficients() {
 /**
  * Trace field lines and build the mesh group.
  */
-async function rebuildFieldLines() {
+async function rebuildFieldLines(morphDuration = 8200) {
   const buildId = ++fieldLineBuildId;
 
-  if (fieldLineGroup) {
-    scene.remove(fieldLineGroup);
-    fieldLineGroup.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) obj.material.dispose();
-    });
-    fieldLineGroup = null;
+  // Snapshot solar wind params once before the trace loop so all seeds use a
+  // consistent sun position (params.sunLongitude changes every frame during playback).
+  //
+  // For long periodic morphs (> 1.5 s), target the sun position at morph-end so the
+  // field lines "arrive" aligned with the sun when the transition completes.
+  // For short user-action morphs, use the current sim time as-is.
+  let swParams = null;
+  if (params.solarWindEnabled) {
+    if (morphDuration > 1500 && timeline) {
+      const targetIso = timeline.getSimTimeAt(morphDuration);
+      const sp = solarPosition(new Date(targetIso));
+      swParams = {
+        enabled: true,
+        vSw: params.solarWindSpeed,
+        nSw: params.solarWindDensity,
+        imfBz: params.imfBz,
+        dst: params.dst,
+        sunLonRad: sp.longitudeRad,
+        ps: sp.declinationRad,
+      };
+    } else {
+      swParams = getSolarWindParams(); // current sim time
+    }
   }
 
   const latitudes = LATITUDE_SETS[params.numLatitudes - 1];
@@ -203,7 +219,7 @@ async function rebuildFieldLines() {
     const seed = seeds[i];
     const points = traceFieldLine(seed.x, seed.y, seed.z, coeffs, {
       maxDegree: params.maxDegree,
-      solarWindParams: getSolarWindParams(),
+      solarWindParams: swParams,
     });
     tracedLines.push({ points, lat: seed.lat, lon: seed.lon });
 
@@ -214,17 +230,115 @@ async function rebuildFieldLines() {
     }
   }
 
-  // Final check before adding to scene
+  // Final check before modifying scene
   if (buildId !== fieldLineBuildId) return;
 
-  fieldLineGroup = buildFieldLineGroup(tracedLines, latitudeToColor, {
-    radius: params.tubeRadius,
-  });
-  fieldLineGroup.visible = params.showFieldLines;
-  scene.add(fieldLineGroup);
+  // Pre-filter to lines that will produce a valid mesh (≥2 points).
+  // buildFieldLineGroup silently skips null meshes, so comparing children.length
+  // to tracedLines.length would be wrong if any line is degenerate.
+  const renderableLines = tracedLines.filter((l) => l.points.length >= 2);
+
+  const sameTopology =
+    fieldLineGroup !== null &&
+    fieldLineGroup.children.length === renderableLines.length;
+
+  if (sameTopology) {
+    startFieldLineTransition(renderableLines, morphDuration);
+  } else {
+    rebuildFieldLinesFull(renderableLines);
+  }
 
   const loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
+}
+
+/**
+ * Full dispose + rebuild of field line group.
+ * Called when line count changes (topology change) or any degenerate line is found.
+ */
+function rebuildFieldLinesFull(tracedLines) {
+  fieldLineTransition = null; // cancel any in-progress morph
+
+  if (fieldLineGroup) {
+    scene.remove(fieldLineGroup);
+    fieldLineGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    fieldLineGroup = null;
+  }
+
+  fieldLineGroup = buildFieldLineGroup(tracedLines, latitudeToColor, {
+    radius: params.tubeRadius,
+    tubularSegments: TUBE_SEGMENTS,
+  });
+  fieldLineGroup.visible = params.showFieldLines;
+  scene.add(fieldLineGroup);
+  applyClipChanges(); // restore any active clipping planes to new meshes
+}
+
+/**
+ * Begin a vertex-morph transition from the current field line positions
+ * to the newly traced positions. Reuses existing meshes to avoid a blink.
+ */
+function startFieldLineTransition(newTracedLines, duration = 8200) {
+  const lines = [];
+
+  for (let i = 0; i < fieldLineGroup.children.length; i++) {
+    const mesh = fieldLineGroup.children[i];
+    const line = newTracedLines[i];
+
+    const targetMesh = createFieldLineMesh(line.points, {
+      color: latitudeToColor(line.lat),
+      radius: params.tubeRadius,
+      tubularSegments: TUBE_SEGMENTS,
+    });
+
+    if (!targetMesh) {
+      // Degenerate target line — fall back to full rebuild
+      rebuildFieldLinesFull(newTracedLines);
+      return;
+    }
+
+    lines.push({
+      mesh,
+      oldPos: mesh.geometry.attributes.position.array.slice(),
+      newPos: targetMesh.geometry.attributes.position.array.slice(),
+    });
+
+    targetMesh.geometry.dispose();
+    targetMesh.material.dispose();
+  }
+
+  fieldLineTransition = {
+    startTime: performance.now(),
+    duration,
+    lines,
+  };
+}
+
+/**
+ * Per-frame lerp of field line vertex positions during a morph transition.
+ * Called from animate(). No-op when no transition is active.
+ */
+function updateFieldLineTransition(now) {
+  if (!fieldLineTransition) return;
+
+  let t = (now - fieldLineTransition.startTime) / fieldLineTransition.duration;
+  if (t > 1) t = 1;
+  const s = t * t * (3 - 2 * t); // smoothstep easing
+
+  for (const { mesh, oldPos, newPos } of fieldLineTransition.lines) {
+    const arr = mesh.geometry.attributes.position.array;
+    for (let j = 0; j < arr.length; j++) {
+      arr[j] = oldPos[j] + s * (newPos[j] - oldPos[j]);
+    }
+    mesh.geometry.attributes.position.needsUpdate = true;
+    mesh.geometry.computeVertexNormals();
+    mesh.geometry.computeBoundingSphere();
+  }
+
+  if (t >= 1) fieldLineTransition = null;
 }
 
 function applyVisualChanges() {
@@ -611,48 +725,107 @@ function updateSatelliteProbe() {
   }, 'Satellite Probe');
 }
 
-// --- Solar wind change handler ---
+// --- Day animation (Three.js keyframe system for sun and moon) ---
 
-function updateSunPosition() {
-  const lonRad = params.sunLongitude * Math.PI / 180;
-  const decRad = params.sunDeclination * Math.PI / 180;
-  sun.setDirection(lonRad, decRad);
+const SUN_DIST = 120;            // must match globe.js createSun SUN_DISTANCE
+const KF_INTERVAL_S = 300;       // keyframe every 5 sim-minutes
+const KF_COUNT = 289;            // 0h..24h inclusive (288 × 5min + endpoint)
+
+let dayStart  = null;
+let sunMixer  = null;
+let moonMixer = null;
+let sunAction = null;
+let moonAction = null;
+
+let fieldLineTransition = null; // null = idle; { startTime, duration, lines } = animating
+
+/**
+ * Pre-compute one day's worth of sun and moon XYZ positions as keyframes
+ * and wire them into new AnimationMixer instances.
+ * Called once per sim-day; ~289 solarPosition / lunarPosition evaluations.
+ */
+function buildDayAnimation(date) {
+  dayStart = new Date(date);
+  dayStart.setUTCHours(0, 0, 0, 0);
+
+  const times   = new Float32Array(KF_COUNT);
+  const sunXYZ  = new Float32Array(KF_COUNT * 3);
+  const moonXYZ = new Float32Array(KF_COUNT * 3);
+
+  for (let i = 0; i < KF_COUNT; i++) {
+    const tSec = i * KF_INTERVAL_S;
+    times[i] = tSec;
+    const d = new Date(dayStart.getTime() + tSec * 1000);
+
+    const sp = solarPosition(d);
+    const cosDs = Math.cos(sp.declinationRad);
+    sunXYZ[i * 3]     = cosDs * Math.cos(sp.longitudeRad) * SUN_DIST;
+    sunXYZ[i * 3 + 1] = Math.sin(sp.declinationRad) * SUN_DIST;
+    sunXYZ[i * 3 + 2] = cosDs * Math.sin(sp.longitudeRad) * SUN_DIST;
+
+    const mp = lunarPosition(d);
+    const cosDm = Math.cos(mp.declinationRad);
+    moonXYZ[i * 3]     = cosDm * Math.cos(mp.longitudeRad) * mp.distanceEarthRadii;
+    moonXYZ[i * 3 + 1] = Math.sin(mp.declinationRad) * mp.distanceEarthRadii;
+    moonXYZ[i * 3 + 2] = cosDm * Math.sin(mp.longitudeRad) * mp.distanceEarthRadii;
+  }
+
+  sunMixer?.stopAllAction();
+  const sunTrack = new THREE.VectorKeyframeTrack('.position', times, sunXYZ);
+  const sunClip  = new THREE.AnimationClip('sun-day', 86400, [sunTrack]);
+  sunMixer  = new THREE.AnimationMixer(sun.group);
+  sunAction = sunMixer.clipAction(sunClip);
+  sunAction.play();
+
+  moonMixer?.stopAllAction();
+  const moonTrack = new THREE.VectorKeyframeTrack('.position', times, moonXYZ);
+  const moonClip  = new THREE.AnimationClip('moon-day', 86400, [moonTrack]);
+  moonMixer  = new THREE.AnimationMixer(moon.mesh);
+  moonAction = moonMixer.clipAction(moonClip);
+  moonAction.play();
+
   sun.group.visible = true;
-  // Move directional light to match sun direction
-  const cosD = Math.cos(decRad);
-  sunLight.position.set(
-    cosD * Math.cos(lonRad) * 5,
-    Math.sin(decRad) * 5,
-    cosD * Math.sin(lonRad) * 5
-  );
+  moon.setVisible(true);
 }
 
 /**
- * Compute sun and moon positions from the current datetimeString and
- * update the scene. Triggers a solar wind rebuild if solar wind is active.
+ * Seek both mixers to the given Date, sync the directional light,
+ * and update params.sunLongitude / params.sunDeclination for solar wind traces.
  */
-function updateDatetime() {
+function applySunMoonAnimation(date) {
+  const simSeconds = (date.getTime() - dayStart.getTime()) / 1000;
+
+  sunMixer.setTime(simSeconds);
+  sun.group.visible = true;
+
+  // Directional light follows the sun sphere (same direction, closer distance)
+  sunLight.position.copy(sun.group.position).multiplyScalar(5 / SUN_DIST);
+
+  // Keep params in sync for solar wind field-line traces
+  const p = sun.group.position;
+  params.sunLongitude   = ((Math.atan2(p.z, p.x) * 180 / Math.PI) + 360) % 360;
+  params.sunDeclination = Math.asin(p.y / SUN_DIST) * 180 / Math.PI;
+
+  moonMixer.setTime(simSeconds);
+}
+
+// --- Solar wind change handler ---
+
+/**
+ * Position sun and moon from the current datetimeString via the keyframe system.
+ * Triggers a solar wind rebuild if solar wind is active.
+ */
+function updateDatetime(isPeriodicUpdate = false) {
   const date = new Date(params.datetimeString);
   if (isNaN(date.getTime())) return;
 
-  // Sun position
-  const sunPos = solarPosition(date);
-  params.sunLongitude = (sunPos.longitudeRad * 180 / Math.PI + 360) % 360;
-  params.sunDeclination = sunPos.declinationRad * 180 / Math.PI;
-  updateSunPosition();
+  const newDay = new Date(date);
+  newDay.setUTCHours(0, 0, 0, 0);
+  if (!dayStart || newDay.getTime() !== dayStart.getTime()) buildDayAnimation(date);
+  applySunMoonAnimation(date);
 
-  // Moon position
-  if (params.showMoon) {
-    const moonPos = lunarPosition(date);
-    moon.setPosition(moonPos.longitudeRad, moonPos.declinationRad, moonPos.distanceEarthRadii);
-    moon.setVisible(true);
-  } else {
-    moon.setVisible(false);
-  }
-
-  // Rebuild field lines (and related) if solar wind uses the sun direction
   if (params.solarWindEnabled) {
-    rebuildFieldLines();
+    rebuildFieldLines(isPeriodicUpdate ? 8200 : 1000);
     if (params.showIsosurfaces) rebuildIsosurfaces();
     if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
     if (params.showSatellite) updateSatelliteProbe();
@@ -660,10 +833,27 @@ function updateDatetime() {
   }
 }
 
+/**
+ * Per-frame lightweight update during timeline playback.
+ * Seeks the pre-computed keyframe animation to the current sim time.
+ * Full updateDatetime() is called on pause and every 2s (throttled rebuild).
+ */
+function lightUpdateDatetime(isoString) {
+  const simTime = new Date(isoString);
+  if (isNaN(simTime.getTime())) return;
+
+  params.datetimeString = isoString;
+
+  const newDay = new Date(simTime);
+  newDay.setUTCHours(0, 0, 0, 0);
+  if (!dayStart || newDay.getTime() !== dayStart.getTime()) buildDayAnimation(simTime);
+
+  applySunMoonAnimation(simTime);
+}
+
 function onSolarWindChange() {
   // Solar wind affects everything: field lines, isosurfaces, belts, satellite
-  updateSunPosition();
-  rebuildFieldLines();
+  rebuildFieldLines(1000); // sun/moon position already maintained by animation system
   if (params.showIsosurfaces) rebuildIsosurfaces();
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   if (params.showSatellite) updateSatelliteProbe();
@@ -698,8 +888,9 @@ function onMagnetopauseChange() {
 
 // --- UI ---
 createInfoOverlay();
-createControlPanel(params, {
-  onRebuild: () => rebuildFieldLines(),
+let timeline; // declared before GUI so lightUpdateDatetime can reference it
+const gui = createControlPanel(params, {
+  onRebuild: () => rebuildFieldLines(1000),
   onVisualChange: applyVisualChanges,
   onIsoRebuild: () => rebuildIsosurfaces(),
   onIsoVisualChange: applyIsoVisualChanges,
@@ -709,7 +900,13 @@ createControlPanel(params, {
   onSatelliteChange: updateSatelliteProbe,
   onSolarWindChange,
   onMagnetopauseChange,
-  onDatetimeChange: updateDatetime,
+});
+
+timeline = createTimeline({
+  initialTime: new Date(params.datetimeString),
+  onTimeChange:      (iso) => lightUpdateDatetime(iso),
+  onPause:           ()    => { fieldLineTransition = null; updateDatetime(false); },
+  onPeriodicRebuild: ()    => updateDatetime(true),
 });
 
 // --- Resize ---
@@ -720,8 +917,10 @@ window.addEventListener('resize', () => {
 });
 
 // --- Animation loop ---
-function animate() {
+function animate(now) {
   requestAnimationFrame(animate);
+  if (timeline) timeline.tick(now); // advance time before rendering to avoid 1-frame lag
+  updateFieldLineTransition(now);
   controls.update();
   renderer.render(scene, camera);
 }

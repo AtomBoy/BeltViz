@@ -98,7 +98,8 @@ Storm presets: Quiet (v=400, n=5, Bz=0, Dst=0), Moderate Storm (v=500, n=10, Bz=
 - `src/physics/magneticEnvironment.js` — Computes L-shell (dipole approximation: `tan(λ_m) = |Br|/(2*Bperp)`, `L = r/(Re*cos²λ_m)`), radiation belt region classification, SAA proximity at any point. Reuses `computeB`.
 - `src/physics/satellitePosition.js` — Geographic lat/lon/alt to physics coordinates (Y-up Cartesian + spherical). Ready for future satellite.js (SGP4/TLE) integration.
 - `src/scene/satelliteMarker.js` — Small emissive sphere at configured position.
-- `src/ui/environmentReadout.js` — Fixed-position HTML overlay showing |B|, L-shell, region, SAA status. Styled to match infoOverlay.
+- `src/ui/environmentReadout.js` — Fixed-position HTML overlay (top-left, below info overlay) showing |B|, L-shell, region, SAA status. Styled to match infoOverlay.
+- `src/ui/timeline.js` — Bottom-of-screen timeline bar. Play/pause, speed (1×/60×/3600×/86400×), day ◄/► navigation, draggable playhead. Calls `lightUpdateDatetime` each rAF frame (seeks Three.js keyframes), `updateDatetime` on pause/drag-end/every 2s throttle (full field-line rebuild). See `ANIMATION.md` for the full sun/moon animation architecture.
 
 ## Testing
 
@@ -128,12 +129,12 @@ When adding a new physics model, algorithm, or data source:
 - [X] Complete the interrupted work to show the moon and place it in the propper location and implement time-based positioning of everything. See context or ask for more detail.
 - [X] The field lines had a bug where the simulation stopped before the end of longer field lines becuase they used limits that worked ok in scenarios with no solar wind. A fix was made and it appeared to work, but it turns out that it only worked in the 'Quiet' preset. Stronger solar wind conditions reveal the bug again which shows the field lines going in straight lines at 45 degree angles to the orbital plane. Revisit the previous fix that increased the limits on the field line simulation and ensure they work on very long field lines as seen in the worst-case solar wind scenarios. **Fixed by replacing the hand-crafted model with T89c (Tsyganenko 1989).**
 - [ ] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
-- [ ] The info for the satellite is hidden under the ui. Move it to the top left.
+- [X] The info for the satellite is hidden under the ui. Move it to the top left. **Fixed: environmentReadout moved to top-left (top:155px) below the info overlay.**
 - [ ] The year (epoch) of the IGRF model that's being used should be shown in infoOverlay.js.
 
 ### Longer term - Phase 4, 5, 6 - we're not implementing these yet but keeping them in mind
 
-- [ ] Animation over time.
+- [X] Animation over time. **Implemented via timeline bar (`src/ui/timeline.js`): play/pause, 1×/60×/3600×/86400× speed, day navigation, scrubbing. Sun/moon use Three.js AnimationMixer with pre-computed keyframes (5-min intervals, 289 per day). Field lines rebuild every 2s during playback. See `ANIMATION.md`.**
 - [ ] Solar wind driven by actual historical data. Hourly resoloution is probably a good start. See [https://www.ncei.noaa.gov/cloud-access/space-weather-portal/overview?sat=DSCOVR] for likely data source.
 - [ ] We want to show satellites moving in orbit based on a tle file (also called a 3le file). We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.)
 - [ ] Show satellite CAD model on satellite selection. There is an example CAD file in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.

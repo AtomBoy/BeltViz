@@ -185,10 +185,11 @@ export function generateSeedPoints(options = {}) {
 
   // Southern hemisphere mirrors (only the high-latitude bands that
   // produce visually distinct open field lines).
-  // Use half the longitudes to avoid dense clustering near poles.
+  // Cap at 8: southern lines are symmetric enough that extra longitude
+  // resolution beyond 8 adds little visual information.
   if (bothHemispheres) {
     const southLats = latitudes.filter((l) => l >= 55);
-    const nSouthLon = Math.max(4, Math.ceil(nLongitudes / 2));
+    const nSouthLon = Math.min(8, Math.max(4, Math.ceil(nLongitudes / 4)));
     for (const lat of southLats) {
       for (let i = 0; i < nSouthLon; i++) {
         const lon = (360 / nSouthLon) * i;
@@ -201,8 +202,9 @@ export function generateSeedPoints(options = {}) {
   }
 
   // Polar cap seeds — very high latitudes for open field lines.
-  // Use half the longitudes since lines converge tightly near the poles.
-  const nPolarLon = Math.max(4, Math.ceil(nLongitudes / 2));
+  // Cap at 6: field lines are nearly axisymmetric at 85-88° so fine
+  // longitude resolution is redundant and these are the most expensive traces.
+  const nPolarLon = Math.min(6, Math.max(4, Math.ceil(nLongitudes / 4)));
   for (const lat of polarCapLatitudes) {
     for (let i = 0; i < nPolarLon; i++) {
       const lon = (360 / nPolarLon) * i;

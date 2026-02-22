@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { KM_TO_SCENE } from '../utils/constants.js';
 
+export const TUBE_SEGMENTS = 200;
+
 /**
  * Create a Three.js mesh for a traced field line.
  * @param {number[][]} points - Array of [x, y, z] in km
@@ -24,7 +26,7 @@ export function createFieldLineMesh(points, options = {}) {
   const curve = new THREE.CatmullRomCurve3(vectors);
 
   // Tube geometry along the curve
-  const tubularSegments = Math.min(vectors.length * 2, 500);
+  const tubularSegments = options.tubularSegments ?? TUBE_SEGMENTS;
   const geometry = new THREE.TubeGeometry(
     curve,
     tubularSegments,
