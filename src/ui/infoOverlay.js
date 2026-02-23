@@ -45,10 +45,7 @@ export function createInfoOverlay() {
     }
     #info-overlay p { margin: 4px 0; }
     #info-overlay .legend { margin-top: 8px; }
-    #info-overlay .warm { color: #ff6644; font-size: 16px; }
-    #info-overlay .cool { color: #44aaff; font-size: 16px; margin-left: 8px; }
     #info-overlay .attribution {
-      margin-top: 10px;
       font-size: 11px;
       color: #88a0b8;
     }

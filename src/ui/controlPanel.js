@@ -20,7 +20,7 @@ export function createControlPanel(params, callbacks) {
     onMagnetopauseChange,
   } = callbacks;
 
-  const gui = new GUI({ title: 'BeltViz Controls' });
+  const gui = new GUI({ title: 'Controls' });
 
   // --- Field Lines folder ---
   const fieldFolder = gui.addFolder('Field Lines');
