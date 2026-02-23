@@ -10,7 +10,6 @@ export function setupControls(camera, renderer) {
   controls.minDistance = 1.5;
   controls.maxDistance = 80;
   controls.enablePan = false;
-  controls.autoRotate = false;
   controls.autoRotateSpeed = 0.3;
   return controls;
 }

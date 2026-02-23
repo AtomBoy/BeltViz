@@ -14,6 +14,7 @@ export function createInfoOverlay() {
       Data: <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">NOAA NCEI IGRF-14</a><br>
       Texture: NASA Blue Marble
     </p>
+    <p id="sw-data-note" class="attribution"></p>
   `;
   document.body.appendChild(div);
 
@@ -60,4 +61,14 @@ export function createInfoOverlay() {
   document.head.appendChild(style);
 
   return div;
+}
+
+/**
+ * Set the solar wind data source note in the info overlay.
+ * Called once after the historical data file is loaded.
+ * @param {string} text - e.g. 'Solar wind: NASA OMNI2 Hourly (2025)'
+ */
+export function setSolarWindDataNote(text) {
+  const el = document.getElementById('sw-data-note');
+  if (el) el.textContent = text;
 }

@@ -2,16 +2,22 @@
  * Timeline control bar.
  *
  * A Cesium-inspired horizontal timeline at the bottom of the screen for
- * scrubbing and animating through time. Simpler than Cesium: flat dark
- * background, no color gradients, 6-hour major ticks only.
+ * scrubbing and animating through time. Shows one week; the window slides
+ * forward one day at a time during playback.
+ *
+ * The scrub-area background is colored by solar wind storm intensity (Dst + IMF Bz)
+ * when a getSolarWindData callback is provided — quiet conditions appear as a dark
+ * blue wash; moderate storms turn amber; severe storms turn red.
  *
  * Playback model:
- *   - Every rAF frame: calls onTimeChange(iso16) → lightweight sun/moon update
- *   - Every 2 real seconds: calls onPause() → full field-line rebuild (throttled)
+ *   - Every rAF frame: calls onTimeChange(iso19) → lightweight sun/moon update
+ *   - Every 8 real seconds: calls onPeriodicRebuild() → full field-line rebuild (throttled)
  *   - On pause / drag end: calls onPause() → final rebuild
  */
 
 const REBUILD_INTERVAL_MS = 8000;
+const WINDOW_MS   = 7 * 86400_000; // one-week view
+const WINDOW_DAYS = 7;
 
 function utcStartOfDay(date) {
   const d = new Date(date);
@@ -19,16 +25,27 @@ function utcStartOfDay(date) {
   return d;
 }
 
-function formatTickLabel(date, showDate) {
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  const timeStr = `${hh}:${mm}`;
-  if (showDate) {
-    const month = date.toLocaleDateString('en', { month: 'short', timeZone: 'UTC' });
-    const day   = date.getUTCDate();
-    return `${timeStr} ${month} ${day}`;
-  }
-  return timeStr;
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp3(a, mid, b, t) {
+  return t < 0.5 ? lerp(a, mid, t * 2) : lerp(mid, b, (t - 0.5) * 2);
+}
+
+/**
+ * Map one hour of solar wind data to a canvas fill color.
+ *   Quiet  (Dst ≈ 0,    Bz ≈ 0)   → dark blue,  low opacity
+ *   Minor  (Dst ≈ -50,  Bz ≈ -5)  → amber,      medium opacity
+ *   Severe (Dst < -100, Bz < -15) → red,         high opacity
+ */
+function intensityColor(sw) {
+  if (!sw) return 'rgba(0,20,80,0.06)';
+  const dstI = sw.Dst !== null ? Math.max(0, -sw.Dst / 150) : 0;
+  const bzI  = sw.Bz  !== null ? Math.max(0, -sw.Bz  / 20)  : 0;
+  const t    = Math.min(1, dstI * 0.7 + bzI * 0.3);
+  const r = Math.round(lerp3(0,   180, 210, t));
+  const g = Math.round(lerp3(40,  100,  20, t));
+  const b = Math.round(lerp3(120,  30,  20, t));
+  const a = lerp(0.06, 0.55, t).toFixed(2);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 function injectStyles() {
@@ -61,10 +78,15 @@ function injectStyles() {
       border-left: 1px solid rgba(100, 150, 200, 0.2);
       overflow: hidden;
     }
+    #tl-sw-canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; z-index: 0;
+    }
     .tl-tick-major {
       position: absolute; top: 0; bottom: 0; width: 1px;
       background: rgba(100, 150, 200, 0.3);
-      pointer-events: none;
+      pointer-events: none; z-index: 1;
     }
     .tl-tick-major .tl-label {
       position: absolute; bottom: 7px; left: 4px;
@@ -73,7 +95,7 @@ function injectStyles() {
     .tl-tick-minor {
       position: absolute; top: 44%; bottom: 0; width: 1px;
       background: rgba(100, 150, 200, 0.15);
-      pointer-events: none;
+      pointer-events: none; z-index: 1;
     }
     #tl-playhead {
       position: absolute; top: 0; bottom: 0; width: 2px;
@@ -109,14 +131,16 @@ function injectStyles() {
  * Create a timeline control bar.
  *
  * @param {object} opts
- * @param {Date|string} opts.initialTime - Starting time
- * @param {function} opts.onTimeChange       - Called every frame during play/scrub with iso16 string
- * @param {function} opts.onPause            - Called on pause and drag end (user-initiated; short morph)
- * @param {function} [opts.onPeriodicRebuild] - Called by the 8s throttle during playback (long morph).
- *                                              Defaults to onPause if not provided.
- * @returns {{ setTime(isoString): void, destroy(): void }}
+ * @param {Date|string} opts.initialTime         - Starting time
+ * @param {function} opts.onTimeChange           - Called every frame during play/scrub with iso19 string
+ * @param {function} opts.onPause                - Called on pause and drag end (user-initiated; short morph)
+ * @param {function} [opts.onPeriodicRebuild]    - Called by the 8s throttle during playback (long morph).
+ *                                                 Defaults to onPause if not provided.
+ * @param {function} [opts.getSolarWindData]     - Optional: (unixSeconds) → {Dst, Bz, ...} | null
+ *                                                 Used to color the timeline background by storm intensity.
+ * @returns {{ setTime(isoString): void, getSimTimeAt(ms): string, refreshColors(): void, destroy(): void }}
  */
-export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicRebuild }) {
+export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicRebuild, getSolarWindData }) {
   const _onPeriodicRebuild = onPeriodicRebuild || onPause;
   let currentTime    = new Date(initialTime);
   let viewDate       = utcStartOfDay(currentTime);
@@ -133,12 +157,12 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   container.id = 'timeline';
   container.innerHTML = `
     <div id="tl-controls">
-      <button class="tl-btn" id="tl-prev" title="Previous day">◀</button>
+      <button class="tl-btn" id="tl-prev" title="Previous week">◀</button>
       <div id="tl-clock">
         <div id="tl-date"></div>
         <div id="tl-time"></div>
       </div>
-      <button class="tl-btn" id="tl-next" title="Next day">▶</button>
+      <button class="tl-btn" id="tl-next" title="Next week">▶</button>
       <button class="tl-btn" id="tl-play" title="Play / Pause">▶</button>
       <select class="tl-select" id="tl-speed" title="Playback speed">
         <option value="1">1×</option>
@@ -152,41 +176,73 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   `;
   document.body.appendChild(container);
 
-  // --- Cached element references (set once; avoids per-frame querySelector) ---
+  // --- Cached element references ---
   const elDate    = container.querySelector('#tl-date');
   const elTime    = container.querySelector('#tl-time');
   const elPlayBtn = container.querySelector('#tl-play');
-  let   elPlayhead = null; // set by buildTicks() on first call and kept current
+  const bar       = container.querySelector('#tl-bar');
+
+  // Canvas for solar wind intensity background
+  const swCanvas = document.createElement('canvas');
+  swCanvas.id = 'tl-sw-canvas';
+  bar.appendChild(swCanvas);
+
+  let elPlayhead = null;
 
   // Last-written values — guard textContent writes to avoid needless DOM mutations
-  let lastDateStr = '';
-  let lastTimeStr = '';
-  let lastPlayingIcon = ''; // '' forces first write
+  let lastDateStr     = '';
+  let lastTimeStr     = '';
+  let lastPlayingIcon = '';
+
+  // --- Solar wind intensity canvas ---
+  function paintSolarWind() {
+    if (!getSolarWindData) return;
+    const W = bar.clientWidth;
+    const H = bar.clientHeight;
+    if (W === 0 || H === 0) return;
+    if (swCanvas.width !== W || swCanvas.height !== H) {
+      swCanvas.width  = W;
+      swCanvas.height = H;
+    }
+    const ctx = swCanvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    const hours = WINDOW_DAYS * 24; // 168
+    for (let i = 0; i < hours; i++) {
+      const unixSec = (viewDate.getTime() + i * 3600_000) / 1000;
+      const sw = getSolarWindData(unixSec);
+      ctx.fillStyle = intensityColor(sw);
+      const x     = Math.floor(i       / hours * W);
+      const nextX = Math.floor((i + 1) / hours * W);
+      ctx.fillRect(x, 0, (nextX - x) || 1, H);
+    }
+  }
+
+  // ResizeObserver repaints the canvas whenever the bar is laid out or resized
+  const ro = new ResizeObserver(() => paintSolarWind());
+  ro.observe(bar);
 
   // --- Tick marks ---
   function buildTicks() {
-    const bar = container.querySelector('#tl-bar');
-    // Remove old ticks (not the playhead)
     bar.querySelectorAll('.tl-tick-major, .tl-tick-minor').forEach(el => el.remove());
 
-    // Major ticks every 6 hours: 0h, 6h, 12h, 18h, 24h
-    for (let h = 0; h <= 24; h += 6) {
-      const t = new Date(viewDate.getTime() + h * 3600_000);
+    // Major ticks at day boundaries (0–7 days)
+    for (let d = 0; d <= WINDOW_DAYS; d++) {
+      const t = new Date(viewDate.getTime() + d * 86400_000);
       const div = document.createElement('div');
       div.className = 'tl-tick-major';
-      div.style.left = (h / 24 * 100) + '%';
+      div.style.left = (d / WINDOW_DAYS * 100) + '%';
       const label = document.createElement('span');
       label.className = 'tl-label';
-      label.textContent = formatTickLabel(t, h === 0 || h === 24);
+      label.textContent = t.toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
       div.appendChild(label);
       bar.appendChild(div);
     }
 
-    // Minor ticks every 3 hours (no label): 3h, 9h, 15h, 21h
-    for (let h = 3; h < 24; h += 6) {
+    // Minor ticks at 12h marks (midday of each day)
+    for (let d = 0; d < WINDOW_DAYS; d++) {
       const div = document.createElement('div');
       div.className = 'tl-tick-minor';
-      div.style.left = (h / 24 * 100) + '%';
+      div.style.left = ((d + 0.5) / WINDOW_DAYS * 100) + '%';
       bar.appendChild(div);
     }
 
@@ -197,6 +253,8 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
       elPlayhead.id = 'tl-playhead';
     }
     bar.appendChild(elPlayhead);
+
+    paintSolarWind();
   }
 
   // --- Display update ---
@@ -209,24 +267,18 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
     const timeStr = currentTime.toISOString().slice(11, 16) + ' UTC';
     if (timeStr !== lastTimeStr) { elTime.textContent = timeStr; lastTimeStr = timeStr; }
 
-    const pct = (currentTime.getTime() - viewDate.getTime()) / 86400_000;
+    const pct = (currentTime.getTime() - viewDate.getTime()) / WINDOW_MS;
     if (elPlayhead) elPlayhead.style.left = Math.max(0, Math.min(1, pct)) * 100 + '%';
 
     const icon = playing ? '⏸' : '▶';
     if (icon !== lastPlayingIcon) { elPlayBtn.textContent = icon; lastPlayingIcon = icon; }
   }
 
-  // tick() is called by the main render loop each frame instead of using its own rAF.
-  // This guarantees time is advanced before renderer.render() in the same frame,
-  // eliminating the 1-frame lag that causes jitter when two rAF loops compete.
-
   // --- Bar mouse interaction ---
-  const bar = container.querySelector('#tl-bar');
-
   function seekToEvent(e) {
     const rect = bar.getBoundingClientRect();
     const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    currentTime = new Date(viewDate.getTime() + pct * 86400_000);
+    currentTime = new Date(viewDate.getTime() + pct * WINDOW_MS);
     updateDisplay();
     onTimeChange(currentTime.toISOString().slice(0, 16));
   }
@@ -251,15 +303,15 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   container.querySelector('#tl-play').addEventListener('click', () => {
     playing = !playing;
     if (!playing) {
-      lastRebuildMs = 0; // reset throttle so first tick after resume fires rebuild
-      onPause();         // sync field lines to the paused sim time
+      lastRebuildMs = 0;
+      onPause();
     }
     updateDisplay();
   });
 
   container.querySelector('#tl-prev').addEventListener('click', () => {
-    viewDate    = new Date(viewDate.getTime()    - 86400_000);
-    currentTime = new Date(currentTime.getTime() - 86400_000);
+    viewDate    = new Date(viewDate.getTime()    - WINDOW_MS);
+    currentTime = new Date(currentTime.getTime() - WINDOW_MS);
     buildTicks();
     updateDisplay();
     onTimeChange(currentTime.toISOString().slice(0, 16));
@@ -267,8 +319,8 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   });
 
   container.querySelector('#tl-next').addEventListener('click', () => {
-    viewDate    = new Date(viewDate.getTime()    + 86400_000);
-    currentTime = new Date(currentTime.getTime() + 86400_000);
+    viewDate    = new Date(viewDate.getTime()    + WINDOW_MS);
+    currentTime = new Date(currentTime.getTime() + WINDOW_MS);
     buildTicks();
     updateDisplay();
     onTimeChange(currentTime.toISOString().slice(0, 16));
@@ -313,8 +365,8 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
       lastRealMs = now;
       currentTime = new Date(currentTime.getTime() + speed * dtReal);
 
-      // Auto-advance view window past midnight
-      const viewEnd = viewDate.getTime() + 86400_000;
+      // Slide the view window forward one day when the playhead reaches the right edge
+      const viewEnd = viewDate.getTime() + WINDOW_MS;
       if (currentTime.getTime() >= viewEnd) {
         viewDate = new Date(viewDate.getTime() + 86400_000);
         buildTicks();
@@ -346,15 +398,22 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
     /**
      * Returns the ISO sim-time that will be current `realFutureMs` real milliseconds from now.
      * When paused, returns the current sim-time (no advancement).
-     * Used by rebuildFieldLines to target the sun position at morph-end so field lines
-     * "arrive" aligned with the sun when the transition completes.
      */
     getSimTimeAt(realFutureMs) {
       if (!playing) return currentTime.toISOString();
       return new Date(currentTime.getTime() + speed * realFutureMs).toISOString();
     },
 
+    /**
+     * Repaint the solar wind color canvas.
+     * Call after new solar wind data has been loaded so the colors reflect the data.
+     */
+    refreshColors() {
+      paintSolarWind();
+    },
+
     destroy() {
+      ro.disconnect();
       document.removeEventListener('mousemove', onDrag);
       document.removeEventListener('mouseup',   onDragEnd);
       container.remove();

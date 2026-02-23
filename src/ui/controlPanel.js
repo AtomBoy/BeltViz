@@ -129,20 +129,32 @@ export function createControlPanel(params, callbacks) {
     if (params.solarWindEnabled) onSolarWindChange();
   });
 
-  solarFolder.add(params, 'solarWindSpeed', 300, 800, 10).name('Speed (km/s)').onChange(() => {
+  const cSpeed   = solarFolder.add(params, 'solarWindSpeed', 300, 800, 10).name('Speed (km/s)').onChange(() => {
     if (params.solarWindEnabled) onSolarWindChange();
   });
-  solarFolder.add(params, 'solarWindDensity', 1, 30, 0.5).name('Density (cm⁻³)').onChange(() => {
+  const cDensity = solarFolder.add(params, 'solarWindDensity', 1, 30, 0.5).name('Density (cm⁻³)').onChange(() => {
     if (params.solarWindEnabled) onSolarWindChange();
   });
-  solarFolder.add(params, 'imfBz', -20, 20, 0.5).name('IMF Bz (nT)').onChange(() => {
+  const cBz      = solarFolder.add(params, 'imfBz', -20, 20, 0.5).name('IMF Bz (nT)').onChange(() => {
     if (params.solarWindEnabled) onSolarWindChange();
   });
-  solarFolder.add(params, 'dst', -200, 50, 5).name('Dst Index (nT)').onChange(() => {
+  const cDst     = solarFolder.add(params, 'dst', -200, 50, 5).name('Dst Index (nT)').onChange(() => {
     if (params.solarWindEnabled) onSolarWindChange();
   });
   solarFolder.add(params, 'showMagnetopause').name('Show Magnetopause').onChange(onMagnetopauseChange);
   solarFolder.close();
 
-  return gui;
+  /**
+   * Refresh only the four solar wind value sliders.
+   * Called by main.js when historical data drives param changes (once per sim-hour)
+   * to avoid traversing all GUI controllers every frame.
+   */
+  function refreshSolarWindControls() {
+    cSpeed.updateDisplay();
+    cDensity.updateDisplay();
+    cBz.updateDisplay();
+    cDst.updateDisplay();
+  }
+
+  return { gui, refreshSolarWindControls };
 }

@@ -31,6 +31,8 @@ import { geographicToPhysicsPosition } from './physics/satellitePosition.js';
 import { computeMagneticEnvironment } from './physics/magneticEnvironment.js';
 import { updateEnvironmentReadout, hideEnvironmentReadout } from './ui/environmentReadout.js';
 import { KM_TO_SCENE } from './utils/constants.js';
+import { loadSolarWindData, getSolarWindAtTime } from './physics/solarWindData.js';
+import { setSolarWindDataNote } from './ui/infoOverlay.js';
 
 // --- Params (mutable, controlled by GUI) ---
 const params = {
@@ -60,7 +62,7 @@ const params = {
   satLongitude: 0,
   satAltitude: 400,
   // Solar wind params
-  solarWindEnabled: false,
+  solarWindEnabled: true,
   solarWindSpeed: 400,
   solarWindDensity: 5,
   imfBz: 0,
@@ -69,11 +71,9 @@ const params = {
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
-  datetimeString: (() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 16);
-  })(),
+  // Default to the start of the loaded solar wind data file so historical
+  // playback works immediately on launch.
+  datetimeString: '2025-01-01T00:00',
 };
 
 /**
@@ -717,6 +717,7 @@ let sunAction = null;
 let moonAction = null;
 
 let fieldLineTransition = null; // null = idle; { startTime, duration, lines } = animating
+let lastDataHour = null;        // Unix seconds (floor-to-hour) of last historical data pull
 
 /**
  * Pre-compute one day's worth of sun and moon XYZ positions as keyframes
@@ -813,6 +814,21 @@ function updateDatetime(isPeriodicUpdate = false) {
 }
 
 /**
+ * Apply historical solar wind params for a given Unix timestamp (seconds).
+ * Clamps values to slider ranges so lil-gui stays consistent.
+ * No-op when no data is available for the given time.
+ */
+function applyDataSolarWind(unixSeconds) {
+  const sw = getSolarWindAtTime(unixSeconds);
+  if (!sw) return;
+  if (sw.vSw !== null) params.solarWindSpeed   = Math.min(800, Math.max(300, Math.round(sw.vSw)));
+  if (sw.nSw !== null) params.solarWindDensity = Math.min(30,  Math.max(1,   Math.round(sw.nSw * 10) / 10));
+  if (sw.Bz  !== null) params.imfBz            = Math.min(20,  Math.max(-20, Math.round(sw.Bz  * 10) / 10));
+  if (sw.Dst !== null) params.dst              = Math.min(50,  Math.max(-200, Math.round(sw.Dst)));
+  refreshSolarWindControls();
+}
+
+/**
  * Per-frame lightweight update during timeline playback.
  * Seeks the pre-computed keyframe animation to the current sim time.
  * Full updateDatetime() is called on pause and every 2s (throttled rebuild).
@@ -828,6 +844,14 @@ function lightUpdateDatetime(isoString) {
   if (!dayStart || newDay.getTime() !== dayStart.getTime()) buildDayAnimation(simTime);
 
   applySunMoonAnimation(simTime);
+
+  // Pull historical solar wind params once per simulated hour.
+  // The floor-to-hour throttle avoids calling updateDisplay() every frame.
+  const simHour = Math.floor(simTime.getTime() / 3_600_000) * 3600; // Unix seconds
+  if (simHour !== lastDataHour) {
+    lastDataHour = simHour;
+    applyDataSolarWind(simHour);
+  }
 }
 
 function onSolarWindChange() {
@@ -868,7 +892,7 @@ function onMagnetopauseChange() {
 // --- UI ---
 createInfoOverlay();
 let timeline; // declared before GUI so lightUpdateDatetime can reference it
-const gui = createControlPanel(params, {
+const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onRebuild: () => rebuildFieldLines(1000),
   onVisualChange: applyVisualChanges,
   onIsoRebuild: () => rebuildIsosurfaces(),
@@ -882,10 +906,11 @@ const gui = createControlPanel(params, {
 });
 
 timeline = createTimeline({
-  initialTime: new Date(params.datetimeString),
+  initialTime:       new Date(params.datetimeString),
   onTimeChange:      (iso) => lightUpdateDatetime(iso),
   onPause:           ()    => { fieldLineTransition = null; updateDatetime(false); },
   onPeriodicRebuild: ()    => updateDatetime(true),
+  getSolarWindData:  getSolarWindAtTime,
 });
 
 // --- Resize ---
@@ -906,9 +931,18 @@ function animate(now) {
 
 // --- Init ---
 async function init() {
-  await loadCoefficients();
+  await Promise.all([
+    loadCoefficients(),
+    loadSolarWindData(2025),
+  ]);
+  setSolarWindDataNote('Solar wind: NASA OMNI2 Hourly (2025)');
+  const initUnix = Math.floor(new Date(params.datetimeString).getTime() / 1000);
+  applyDataSolarWind(initUnix);
+  lastDataHour = Math.floor(initUnix / 3600) * 3600;
+  timeline.refreshColors(); // paint the timeline's solar wind intensity background
   updateDatetime(); // position sun and moon from default date
   await rebuildFieldLines();
+  applyVisualChanges(); // sync params → Three.js state (autoRotate, visibility) on startup
   animate();
 }
 

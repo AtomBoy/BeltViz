@@ -23,6 +23,18 @@ node scripts/convert-igrf.js scripts/igrf14coeffs.txt 2000.0  # specific epoch
 
 Output goes to `public/data/igrf14coeffs.json`. The converter supports all epochs from 1900-2025 in 5-year steps. SV (secular variation) labels like "2025-30" are skipped by detecting the hyphen.
 
+### Solar wind data conversion
+
+Historical hourly solar wind data comes from the NASA OMNI2 dataset. To regenerate or add a year:
+
+```bash
+node scripts/convert-solarwind.js 2025          # downloads from NASA SPDF and writes public/data/solarwind-2025.json
+node scripts/convert-solarwind.js 2024          # any year back to 1963
+node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # use a pre-downloaded local file
+```
+
+Output goes to `public/data/solarwind-YYYY.json`. The format is columnar JSON with Unix epoch timestamps and five parameters: `vSw` (km/s), `nSw` (cm⁻³), `By` (nT GSM), `Bz` (nT GSM), `Dst` (nT). Missing hours from the OMNI source are stored as `null`; the app interpolates at runtime. See `SOLAR_WIND_DATA.md` for the full data format specification and source documentation.
+
 ## Architecture
 
 The app is a static client-side web application. No backend. All magnetic field computation runs in JavaScript in the browser.
