@@ -7,27 +7,42 @@
  *
  * DATA SOURCES
  * ─────────────
- * For years 1995–2019 (Qin-Denton coverage, ISWA/NASA server):
- *   Uses the Qin-Denton database (Qin et al. 2007, Space Weather).
+ * Priority 1 — WGhour.d (local, preferred):
+ *   The rweigel/QinDenton Fortran tool produces WGhour.d from OMNI2 source data.
+ *   Covers 1963 to present with G1 and G2 pre-computed for Tsyganenko T01.
+ *   If public/data/WGhour.d exists it is used automatically for any year.
+ *   See: https://github.com/rweigel/QinDenton
+ *
+ * Priority 2 — Qin-Denton ISWA (network, years 1995–2019):
  *   Source: https://iswa.gsfc.nasa.gov/iswa_data_tree/composite/magnetosphere/Qin-Denton/hour/
  *   Files:  QinDenton_YYYYMMDD_hour.txt  (one per calendar day, in year/month/ subdirectories)
  *   Contains all solar wind fields AND pre-computed G1, G2 for Tsyganenko T01.
  *   Note: rbsp-ect.newmexicoconsortium.org extends to ~2022 but rate-limits aggressively.
  *
- * For years > 2019 (OMNI2 fallback):
+ * Priority 3 — OMNI2 (network fallback, no G1/G2):
  *   Uses NASA OMNI2 low-resolution hourly dataset.
  *   Source: https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_YYYY.dat
  *   G1 and G2 arrays will be all-null (T01 will run with storm-history = 0).
  *
  * Usage:
- *   node scripts/convert-solarwind.js 2019            # Qin-Denton year (recommended, ISWA/NASA)
- *   node scripts/convert-solarwind.js 2025            # OMNI2 fallback (no G1/G2)
- *   node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # local OMNI2 file
+ *   node scripts/convert-solarwind.js 2024            # auto-detect source (WGhour.d preferred)
+ *   node scripts/convert-solarwind.js 2024 public/data/WGhour.d  # explicit WGhour.d path
+ *   node scripts/convert-solarwind.js 2019            # Qin-Denton year (ISWA/NASA if no WGhour.d)
+ *   node scripts/convert-solarwind.js 2025            # OMNI2 fallback (no G1/G2, no WGhour.d)
+ *   node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # explicit local OMNI2 file
  *
  * Output: public/data/solarwind-YYYY.json (version 2.0 format)
  *
  * Missing/fill values are preserved as null. Interpolation is handled at runtime
  * by src/physics/solarWindData.js.
+ *
+ * WGHOUR.D column layout (0-based after whitespace split):
+ *   [0]  Year  [1] Day-of-year  [2] Hour
+ *   [3]  ByIMF (nT)   [4] BzIMF (nT)
+ *   [5]  V_SW (km/s)  [6] Den_P (cm⁻³)  [7] Pdyn (nPa, unused)
+ *   [8]  G1           [9] G2             [10] G3 (unused)
+ *   [11] 8-char status  [12] kp  [13] akp3  [14] Dst (nT)
+ *   [15-20] Bz1-6   [21-26] W1-6   [27] 6-char status
  *
  * QIN-DENTON column layout (0-based after whitespace split):
  *   [0]  IsoDateTime  [1-6] Year/Month/Day/Hour/Min/Sec
@@ -44,10 +59,14 @@
  *   [40] Dst index (nT)
  */
 
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { get  as httpsGet }  from 'node:https';
 import { get  as httpGet  }  from 'node:http';
 import { URL } from 'node:url';
+
+// Default WGhour.d path (produced by rweigel/QinDenton Fortran tool).
+// If this file exists it is used automatically for any year (covers 1963–present, includes G1/G2).
+const WG_DEFAULT_PATH = 'public/data/WGhour.d';
 
 // Last year with Qin-Denton data available on ISWA (NASA server — reliable, no SSL issues).
 // rbsp-ect.newmexicoconsortium.org has data to ~2022 but rate-limits aggressively; use ISWA instead.
@@ -55,6 +74,20 @@ const QD_MAX_YEAR = 2019;
 // ISWA URL structure: /iswa_data_tree/composite/magnetosphere/Qin-Denton/hour/{YYYY}/{MM}/QinDenton_{YYYYMMDD}_hour.txt
 const QD_HOST = 'iswa.gsfc.nasa.gov';
 const QD_PATH = '/iswa_data_tree/composite/magnetosphere/Qin-Denton/hour';
+
+// WGhour.d column indices (0-based after whitespace split)
+const WG_COL = {
+  year:   0,
+  doy:    1,
+  hour:   2,
+  by:     3,   // ByIMF (nT)
+  bz:     4,   // BzIMF (nT)
+  vsw:    5,   // V_SW (km/s)
+  nSw:    6,   // Den_P (cm⁻³)
+  g1:     8,   // G1 disturbance index for T01
+  g2:     9,   // G2 disturbance index for T01
+  dst:    14,  // Dst (nT)
+};
 
 // Qin-Denton column indices (0-based after whitespace split)
 const QD_COL = {
@@ -252,6 +285,85 @@ async function buildFromQinDenton(year) {
   };
 }
 
+// ─── WGhour.d path (preferred when file is present locally) ──────────────────
+
+function parseWGText(text, year) {
+  const rows = [];
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('Year')) continue; // skip header
+    const p = line.split(/\s+/);
+    if (p.length < 15) continue;
+
+    const rowYear = parseInt(p[WG_COL.year], 10);
+    if (isNaN(rowYear) || rowYear !== year) continue;
+
+    const doy   = parseInt(p[WG_COL.doy],  10);
+    const hour  = parseInt(p[WG_COL.hour], 10);
+    if (isNaN(doy) || isNaN(hour)) continue;
+    const epoch = toUnix(year, doy, hour);
+
+    const by  = parseFloat(p[WG_COL.by]);
+    const bz  = parseFloat(p[WG_COL.bz]);
+    const vsw = parseFloat(p[WG_COL.vsw]);
+    const nSw = parseFloat(p[WG_COL.nSw]);
+    const g1  = parseFloat(p[WG_COL.g1]);
+    const g2  = parseFloat(p[WG_COL.g2]);
+    const dst = parseFloat(p[WG_COL.dst]);
+
+    rows.push({
+      epoch,
+      by:  isFill(by,  FILL_MAG)   ? null : Math.round(by  * 10) / 10,
+      bz:  isFill(bz,  FILL_MAG)   ? null : Math.round(bz  * 10) / 10,
+      vsw: isFill(vsw, FILL_SPEED) ? null : Math.round(vsw),
+      nSw: isFill(nSw, FILL_MAG)   ? null : Math.round(nSw * 10) / 10,
+      g1:  isFill(g1,  FILL_MAG)   ? null : Math.round(g1  * 100) / 100,
+      g2:  isFill(g2,  FILL_MAG)   ? null : Math.round(g2  * 100) / 100,
+      dst: Math.abs(dst) >= FILL_DST ? null : Math.round(dst),
+    });
+  }
+  return rows;
+}
+
+async function buildFromWGhour(year, wgFile) {
+  console.log(`Reading ${wgFile}...`);
+  const text = readFileSync(wgFile, 'utf8');
+  console.log(`  File size: ${(text.length / 1024 / 1024).toFixed(1)} MB`);
+
+  const rows = parseWGText(text, year);
+  const expected = daysInYear(year) * 24;
+
+  const epochs = [], vSw = [], nSw = [], By = [], Bz = [], Dst = [], G1 = [], G2 = [];
+  const nullCount = { vSw: 0, nSw: 0, By: 0, Bz: 0, Dst: 0, G1: 0, G2: 0 };
+
+  for (const r of rows) {
+    epochs.push(r.epoch);
+    vSw.push(r.vsw); if (r.vsw === null) nullCount.vSw++;
+    nSw.push(r.nSw); if (r.nSw === null) nullCount.nSw++;
+    By.push(r.by);   if (r.by  === null) nullCount.By++;
+    Bz.push(r.bz);   if (r.bz  === null) nullCount.Bz++;
+    Dst.push(r.dst);  if (r.dst  === null) nullCount.Dst++;
+    G1.push(r.g1);   if (r.g1  === null) nullCount.G1++;
+    G2.push(r.g2);   if (r.g2  === null) nullCount.G2++;
+  }
+
+  console.log(`Parsed ${rows.length} / ${expected} expected hourly records`);
+  console.log(`Null counts — vSw:${nullCount.vSw} nSw:${nullCount.nSw} By:${nullCount.By} Bz:${nullCount.Bz} Dst:${nullCount.Dst} G1:${nullCount.G1} G2:${nullCount.G2}`);
+
+  if (rows.length === 0) {
+    throw new Error(`No records found for year ${year} in ${wgFile}. Check file coverage.`);
+  }
+
+  return {
+    version:      '2.0',
+    sources:      ['Qin-Denton/WGhour.d (rweigel/QinDenton from OMNI2; github.com/rweigel/QinDenton)'],
+    year,
+    timeStep:     3600,
+    referenceIso: new Date(epochs[0] * 1000).toISOString().slice(0, 19) + 'Z',
+    epochs, vSw, nSw, By, Bz, Dst, G1, G2,
+  };
+}
+
 // ─── OMNI2 path (fallback for years > QD_MAX_YEAR) ──────────────────────────
 
 function parseOmni2Text(text, year) {
@@ -327,28 +439,99 @@ async function buildFromOmni2(year, localFile) {
   };
 }
 
+// ─── Monthly file writer ──────────────────────────────────────────────────────
+
+/**
+ * Split a year's data into 12 monthly JSON files.
+ *
+ * Input: the full-year data object returned by buildFromXxx().
+ * Output: writes public/data/solarwind-YYYY-MM.json for each month present.
+ *
+ * @param {object} output - { version, sources, year, timeStep, epochs, vSw, nSw, By, Bz, Dst, G1, G2 }
+ */
+function writeMonthlyFiles(output) {
+  const { version, sources, year, timeStep, epochs, vSw, nSw, By, Bz, Dst, G1, G2 } = output;
+
+  // Group record indices by calendar month
+  const byMonth = new Map(); // month (1–12) → indices[]
+  for (let i = 0; i < epochs.length; i++) {
+    const month = new Date(epochs[i] * 1000).getUTCMonth() + 1;
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month).push(i);
+  }
+
+  let totalKb = 0;
+  const files = [];
+
+  for (const month of [...byMonth.keys()].sort((a, b) => a - b)) {
+    const idx = byMonth.get(month);
+    const mm  = String(month).padStart(2, '0');
+
+    const monthData = {
+      version, sources, year, month, timeStep,
+      referenceIso: new Date(epochs[idx[0]] * 1000).toISOString().slice(0, 19) + 'Z',
+      epochs: idx.map(i => epochs[i]),
+      vSw:    idx.map(i => vSw[i]),
+      nSw:    idx.map(i => nSw[i]),
+      By:     idx.map(i => By[i]),
+      Bz:     idx.map(i => Bz[i]),
+      Dst:    idx.map(i => Dst[i]),
+      G1:     idx.map(i => G1[i]),
+      G2:     idx.map(i => G2[i]),
+    };
+
+    const outPath = `public/data/solarwind-${year}-${mm}.json`;
+    const json    = JSON.stringify(monthData);
+    writeFileSync(outPath, json);
+    const kb = (json.length / 1024).toFixed(0);
+    totalKb += json.length / 1024;
+    files.push(`  ${outPath} (${kb} KB, ${idx.length} records)`);
+  }
+
+  for (const f of files) console.log(f);
+  console.log(`Total: ${totalKb.toFixed(0)} KB across ${files.length} monthly files`);
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
+
+// Returns true if the given path looks like a WGhour.d file (by extension).
+function isWGhourFile(path) {
+  return path.endsWith('.d') || path.endsWith('.D');
+}
 
 async function main() {
   const year      = parseInt(process.argv[2] || new Date().getUTCFullYear() - 1, 10);
   const localFile = process.argv[3] || null;
 
   if (isNaN(year) || year < 1963 || year > 2099) {
-    console.error('Usage: node scripts/convert-solarwind.js [year] [optional-local-omni2-file.dat]');
+    console.error('Usage: node scripts/convert-solarwind.js [year] [optional-local-file.d|.dat]');
     process.exit(1);
   }
 
-  const useQD = year <= QD_MAX_YEAR && !localFile;
-  console.log(`Building solarwind-${year}.json  [source: ${useQD ? 'Qin-Denton' : 'OMNI2'}]`);
+  let output;
 
-  const output = useQD
-    ? await buildFromQinDenton(year)
-    : await buildFromOmni2(year, localFile);
+  if (localFile) {
+    // Explicit local file: detect format by extension
+    if (isWGhourFile(localFile)) {
+      console.log(`Building solarwind-${year}-MM.json  [source: WGhour.d (${localFile})]`);
+      output = await buildFromWGhour(year, localFile);
+    } else {
+      console.log(`Building solarwind-${year}-MM.json  [source: OMNI2 (${localFile})]`);
+      output = await buildFromOmni2(year, localFile);
+    }
+  } else if (existsSync(WG_DEFAULT_PATH)) {
+    // Auto-use local WGhour.d when available (covers 1963–present with G1/G2)
+    console.log(`Building solarwind-${year}-MM.json  [source: WGhour.d (${WG_DEFAULT_PATH})]`);
+    output = await buildFromWGhour(year, WG_DEFAULT_PATH);
+  } else if (year <= QD_MAX_YEAR) {
+    console.log(`Building solarwind-${year}-MM.json  [source: Qin-Denton (ISWA)]`);
+    output = await buildFromQinDenton(year);
+  } else {
+    console.log(`Building solarwind-${year}-MM.json  [source: OMNI2 (NASA SPDF, no G1/G2)]`);
+    output = await buildFromOmni2(year, null);
+  }
 
-  const outPath = `public/data/solarwind-${year}.json`;
-  const json    = JSON.stringify(output);
-  writeFileSync(outPath, json);
-  console.log(`Written: ${outPath} (${(json.length / 1024).toFixed(0)} KB uncompressed)`);
+  writeMonthlyFiles(output);
   console.log('Done.');
 }
 

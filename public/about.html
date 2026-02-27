@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About — MagRad-CG</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:        #000610;
+      --bg-card:   #040d1f;
+      --border:    rgba(100,150,200,0.18);
+      --accent:    #88ccff;
+      --accent2:   #5599dd;
+      --text:      #c8ddf0;
+      --dim:       #6688aa;
+      --red:       #e05050;
+      --gold:      #c8a84a;
+    }
+
+    html { background: var(--bg); color: var(--text);
+           font-family: 'Helvetica Neue', Arial, sans-serif;
+           font-size: 15px; line-height: 1.65; }
+
+    body { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    /* ── Navigation ── */
+    .nav { display: flex; justify-content: space-between; align-items: center;
+           margin-bottom: 40px; padding-bottom: 16px;
+           border-bottom: 1px solid var(--border); }
+    .nav a { color: var(--accent); text-decoration: none; font-size: 13px;
+              letter-spacing: .04em; }
+    .nav a:hover { text-decoration: underline; }
+    .nav-title { color: var(--dim); font-size: 12px; letter-spacing: .08em;
+                 text-transform: uppercase; }
+
+    /* ── Hero ── */
+    h1 { font-size: 2rem; font-weight: 300; color: var(--accent);
+         letter-spacing: .04em; margin-bottom: 6px; }
+    .subtitle { color: var(--dim); font-size: 14px; letter-spacing: .06em;
+                text-transform: uppercase; margin-bottom: 32px; }
+    .lead { font-size: 16px; color: #a8c8e8; margin-bottom: 40px;
+            max-width: 680px; }
+
+    /* ── Section headings ── */
+    h2 { font-size: 1rem; font-weight: 600; color: var(--accent);
+         letter-spacing: .08em; text-transform: uppercase;
+         margin: 48px 0 20px;
+         padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: .9rem; font-weight: 600; color: #a8c8e8;
+         letter-spacing: .04em; margin: 20px 0 6px; }
+
+    p { margin-bottom: 12px; }
+
+    /* ── Cards for pipeline steps ── */
+    .steps { display: grid; gap: 12px; margin-bottom: 8px; }
+    .step { background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 6px; padding: 16px 20px; display: grid;
+            grid-template-columns: 28px 1fr; gap: 0 14px; align-items: start; }
+    .step-num { color: var(--accent2); font-size: 13px; font-weight: 700;
+                font-family: 'Courier New', monospace; padding-top: 2px; }
+    .step-body strong { color: #d0e8ff; }
+    .step-body { font-size: 14px; }
+
+    /* ── Citation blocks ── */
+    .cites { display: grid; gap: 10px; }
+    .cite { background: var(--bg-card); border-left: 3px solid var(--accent2);
+            border-radius: 0 6px 6px 0; padding: 12px 16px; font-size: 13.5px; }
+    .cite .cite-title { color: #d0e8ff; font-style: italic; }
+    .cite .cite-authors { color: var(--dim); font-size: 12.5px; margin-top: 3px; }
+    .cite a { color: var(--accent); text-decoration: none; }
+    .cite a:hover { text-decoration: underline; }
+    .cite .cite-note { color: var(--gold); font-size: 12px; margin-top: 4px; }
+
+    /* ── Inline code ── */
+    code { font-family: 'Courier New', monospace; font-size: 12.5px;
+           background: rgba(100,150,200,0.1); padding: 1px 5px;
+           border-radius: 3px; color: #a0d0ff; }
+
+    /* ── Footer ── */
+    footer { margin-top: 64px; padding-top: 20px;
+             border-top: 1px solid var(--border);
+             color: var(--dim); font-size: 12.5px; }
+    footer a { color: var(--accent2); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Callout ── */
+    .callout { background: rgba(100,150,200,0.07); border: 1px solid var(--border);
+               border-radius: 6px; padding: 14px 18px; font-size: 14px;
+               margin: 16px 0; }
+    .callout strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="/">← Back to visualization</a>
+    <span class="nav-title">MagRad-CG</span>
+  </nav>
+
+  <h1>MagRad-CG</h1>
+  <p class="subtitle">Magnetospheric Radiometric Cybernetic Garden</p>
+
+  <p class="lead">
+    An interactive 3D visualization of Earth's magnetic field and magnetosphere,
+    driven by real geophysical models and historical solar wind observations.
+    All physics runs in the browser — no server, no plugins.
+  </p>
+
+  <!-- ═══ HOW IT WORKS ═══ -->
+  <h2>How It Works</h2>
+
+  <p>The visualization is computed in three layers, stacked from the inside out:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Internal field — IGRF-14</strong><br>
+        Earth's main magnetic field is computed from the
+        International Geomagnetic Reference Field (IGRF-14), a degree-13 spherical
+        harmonic model published by NOAA/IAGA. The app evaluates the magnetic
+        potential at each point and integrates B(r,θ,φ) using fourth-order
+        Runge–Kutta (RK4) to trace field lines from seed points on the surface.
+        The spherical harmonic degree slider lets you see how successive multipoles
+        add complexity to the pure tilted dipole.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>External field — Tsyganenko T01</strong><br>
+        Solar wind interaction reshapes the field significantly: dayside field lines
+        are compressed by the solar wind ram pressure; nightside lines are stretched
+        into the long magnetotail. The <em>T01</em> empirical model (Tsyganenko 2002)
+        captures all major current systems — ring current, magnetotail current sheet,
+        Birkeland currents, Chapman-Ferraro compression, and IMF penetration — in a
+        single closed-form evaluation. It is parameterized by dynamic pressure,
+        Dst, IMF By/Bz, and the G1/G2 storm-history indices from the Qin-Denton
+        database. The Shue (1998) model defines the magnetopause boundary.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Historical data playback — OMNI2 + WGhour.d</strong><br>
+        The timeline at the bottom drives the solar wind inputs from real hourly
+        observations spanning 1963 to the present. Data comes from the NASA OMNI2
+        merged dataset (solar wind speed, density, IMF By/Bz, Dst) combined with
+        G1 and G2 pre-computed from the Qin-Denton database using Robert Weigel's
+        <em>QinDenton</em> Fortran tool. Monthly JSON files (~28 KB each) are
+        lazy-loaded as you navigate, so only the months you visit are fetched.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Radiation belts</strong> — The inner and outer Van Allen belts are shown
+    as L-shell isosurfaces computed from the dipole approximation
+    (L&nbsp;=&nbsp;r&nbsp;/&nbsp;R<sub>E</sub>&nbsp;cos²λ<sub>m</sub>).
+    The L-shell grids use the internal field only; the dipole L approximation breaks
+    down with external fields in the tail and at the magnetopause.
+  </div>
+
+  <!-- ═══ PHYSICS MODELS ═══ -->
+  <h2>Physics Models</h2>
+
+  <h3>Internal field</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">International Geomagnetic Reference Field: the fourteenth generation (IGRF-14)</div>
+      <div class="cite-authors">
+        Alken, P., Thébault, E., Beggan, C.D., et al. (2021 definitive model; IGRF-14 update 2024).
+        IAGA Division V Working Group V-MOD.
+        Published by NOAA NCEI.
+      </div>
+      <div class="cite-authors">
+        <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">
+          ncei.noaa.gov — IGRF product page
+        </a>
+        &nbsp;·&nbsp;
+        <a href="https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html" target="_blank">
+          IAGA V-MOD working group
+        </a>
+      </div>
+      <div class="cite-note">Degree/order 1–13 Gauss coefficients used directly.</div>
+    </div>
+
+  </div>
+
+  <h3>External field &amp; magnetosphere</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        A model of the near magnetosphere with a dawn-dusk asymmetry:
+        1. Mathematical structure
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (2002). <em>Journal of Geophysical Research</em>, 107(A8), 1179.
+        <a href="https://doi.org/10.1029/2001JA000486" target="_blank">doi:10.1029/2001JA000486</a>
+      </div>
+      <div class="cite-note">T01 model — current implementation. All field-line tracing uses T01.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A model of the near magnetosphere with a dawn-dusk asymmetry:
+        2. Parameterization and fitting to observations
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (2002). <em>Journal of Geophysical Research</em>, 107(A8), 1176.
+        <a href="https://doi.org/10.1029/2001JA000220" target="_blank">doi:10.1029/2001JA000220</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A magnetospheric magnetic field model with a warped tail current sheet (T89c)
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (1989). <em>Planetary and Space Science</em>, 37, 5–20.
+        Updated 1992 with dipole-tilt–dependent tail terms.
+      </div>
+      <div class="cite-note">T89c was the previous implementation; T01 is now used instead.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Magnetopause location under extreme solar wind conditions
+      </div>
+      <div class="cite-authors">
+        Shue, J.H., Song, P., Russell, C.T., Steinberg, J.T., Chao, J.K., Zastenker, G.,
+        Vaisberg, O.L., Kokubun, S., Singer, H.J., Detman, T.R., &amp; Kawano, H. (1998).
+        <em>Journal of Geophysical Research</em>, 103(A8), 17691–17700.
+        <a href="https://doi.org/10.1029/98JA01103" target="_blank">doi:10.1029/98JA01103</a>
+      </div>
+      <div class="cite-note">Magnetopause standoff and flaring angle formula used in this app.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A new functional form to study the solar wind control of the magnetopause
+        size and shape
+      </div>
+      <div class="cite-authors">
+        Shue, J.H., Chao, J.K., Fu, H.C., Russell, C.T., Song, P., Khurana, K.K.,
+        &amp; Singer, H.J. (1997).
+        <em>Journal of Geophysical Research</em>, 102(A5), 9497–9511.
+        <a href="https://doi.org/10.1029/97JA00196" target="_blank">doi:10.1029/97JA00196</a>
+      </div>
+    </div>
+
+  </div>
+
+  <h3>Storm-history indices (G1, G2)</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Solar wind parameters for magnetospheric magnetic field modeling
+      </div>
+      <div class="cite-authors">
+        Qin, Z., Denton, R.E., Tsyganenko, N.A., &amp; Wolf, S. (2007).
+        <em>Space Weather</em>, 5, S11003.
+        <a href="https://doi.org/10.1029/2006SW000296" target="_blank">doi:10.1029/2006SW000296</a>
+      </div>
+      <div class="cite-note">
+        Defines the G1 and G2 disturbance indices used by T01.
+        Pre-computed hourly values are loaded from the Qin-Denton database.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ DATA SOURCES ═══ -->
+  <h2>Data Sources</h2>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">OMNI2 Low-Resolution Solar Wind Data</div>
+      <div class="cite-authors">
+        King, J.H., &amp; Papitashvili, N.E. (2005).
+        "Solar wind spatial scales in and comparisons of hourly Wind and ACE plasma
+        and magnetic field data."
+        <em>Journal of Geophysical Research</em>, 110, A02104.
+        <a href="https://doi.org/10.1029/2004JA010649" target="_blank">doi:10.1029/2004JA010649</a>
+      </div>
+      <div class="cite-authors">
+        Archive: <a href="https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/" target="_blank">
+          spdf.gsfc.nasa.gov — OMNI hourly
+        </a>
+        &nbsp;·&nbsp;
+        <a href="https://omniweb.gsfc.nasa.gov/" target="_blank">omniweb.gsfc.nasa.gov</a>
+      </div>
+      <div class="cite-note">
+        Provides solar wind speed, density, IMF By/Bz, and Dst from 1963 to present.
+        Merged from multiple L1 spacecraft (ACE, Wind, DSCOVR, IMP-8).
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Qin-Denton Hourly Database (G1, G2)
+        via <em>QinDenton</em> Fortran tool
+      </div>
+      <div class="cite-authors">
+        Weigel, R. (2024). <em>QinDenton</em> — Fortran tool to compute Qin-Denton
+        parameters from OMNI2 source data.
+        <a href="https://github.com/rweigel/QinDenton" target="_blank">
+          github.com/rweigel/QinDenton
+        </a>
+      </div>
+      <div class="cite-note">
+        Used to produce <code>WGhour.d</code>, the local source file for G1/G2 and all
+        other solar wind parameters covering 1963 to the present. The output is
+        pre-processed into monthly JSON files by
+        <code>scripts/convert-solarwind.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">IGRF-14 Gauss Coefficients</div>
+      <div class="cite-authors">
+        National Centers for Environmental Information (NOAA NCEI) / IAGA V-MOD.
+        <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">
+          ncei.noaa.gov
+        </a>
+      </div>
+      <div class="cite-note">
+        Degree-13 spherical harmonic coefficients for the 2025.0 epoch.
+        Pre-processed into <code>public/data/igrf14coeffs.json</code>
+        by <code>scripts/convert-igrf.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">NASA Blue Marble — Earth surface texture</div>
+      <div class="cite-authors">
+        NASA/Goddard Space Flight Center.
+        <a href="https://visibleearth.nasa.gov/collection/1484/blue-marble" target="_blank">
+          visibleearth.nasa.gov
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ SOFTWARE ═══ -->
+  <h2>Software &amp; Libraries</h2>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">Three.js — 3D WebGL rendering</div>
+      <div class="cite-authors">
+        Cabello, R. (mrdoob) et al. MIT License.
+        <a href="https://threejs.org/" target="_blank">threejs.org</a>
+      </div>
+      <div class="cite-note">
+        Used for the WebGL render loop, TubeGeometry field lines,
+        CatmullRomCurve3 smoothing, marching-cubes isosurfaces, and
+        MeshPhysicalMaterial for semi-transparent belts and magnetopause.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">geopack — Python port of Tsyganenko's Fortran code</div>
+      <div class="cite-authors">
+        Tian, S. (tsssss). MIT License.
+        <a href="https://github.com/tsssss/geopack" target="_blank">
+          github.com/tsssss/geopack
+        </a>
+      </div>
+      <div class="cite-note">
+        Used as the implementation reference for the JavaScript ports of both T89c
+        (<code>src/physics/t89.js</code>) and T01 (<code>src/physics/t01.js</code>).
+        Tsyganenko's original Fortran remains the authoritative source; this Python
+        port was used to verify the ported logic against known outputs.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Vite — build tool and dev server</div>
+      <div class="cite-authors">
+        You, E. et al. MIT License.
+        <a href="https://vitejs.dev/" target="_blank">vitejs.dev</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">lil-gui — control panel</div>
+      <div class="cite-authors">
+        Brower, G.M. MIT License.
+        <a href="https://lil-gui.georgealways.com/" target="_blank">lil-gui.georgealways.com</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Vitest — test framework</div>
+      <div class="cite-authors">
+        Sheremet, V. et al. MIT License.
+        <a href="https://vitest.dev/" target="_blank">vitest.dev</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>
+      MagRad-CG is an open scientific visualization project.
+      All field-line computation runs client-side in JavaScript.
+      Source code available at
+      <a href="https://github.com/" target="_blank">GitHub</a>.
+    </p>
+    <p style="margin-top:8px; color: #445566;">
+      Physics models and data are reproduced for educational and research purposes.
+      G1/G2 computation based on the Qin-Denton formula as implemented by the
+      <em>QinDenton</em> tool (Weigel 2024), derived from NASA OMNI2.
+    </p>
+  </footer>
+
+</body>
+</html>

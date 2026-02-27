@@ -31,7 +31,7 @@ import { geographicToPhysicsPosition } from './physics/satellitePosition.js';
 import { computeMagneticEnvironment } from './physics/magneticEnvironment.js';
 import { updateEnvironmentReadout, hideEnvironmentReadout } from './ui/environmentReadout.js';
 import { KM_TO_SCENE } from './utils/constants.js';
-import { loadSolarWindData, getSolarWindAtTime } from './physics/solarWindData.js';
+import { loadMonth, ensureMonthsForTime, getSolarWindAtTime, setOnMonthLoaded } from './physics/solarWindData.js';
 import { setSolarWindDataNote } from './ui/infoOverlay.js';
 
 // --- Params (mutable, controlled by GUI) ---
@@ -74,9 +74,7 @@ const params = {
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
-  // Default to the start of the loaded solar wind data file so historical
-  // playback works immediately on launch.
-  datetimeString: '2019-01-01T00:00',
+  datetimeString: '2026-01-01T00:00',
 };
 
 /**
@@ -825,6 +823,10 @@ function updateDatetime(isPeriodicUpdate = false) {
  * No-op when no data is available for the given time.
  */
 function applyDataSolarWind(unixSeconds) {
+  // Kick off background loading of the current month and its neighbors.
+  // Cheap (Map lookups) when already cached; fires fetch only on first visit.
+  ensureMonthsForTime(unixSeconds);
+
   const sw = getSolarWindAtTime(unixSeconds);
   if (!sw) return;
   if (sw.vSw !== null) params.solarWindSpeed   = Math.min(800, Math.max(300, Math.round(sw.vSw)));
@@ -922,6 +924,9 @@ timeline = createTimeline({
   getSolarWindData:  getSolarWindAtTime,
 });
 
+// Repaint the timeline color bar whenever a new monthly data file is loaded.
+setOnMonthLoaded(() => timeline.refreshColors());
+
 // --- Resize ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -940,11 +945,13 @@ function animate(now) {
 
 // --- Init ---
 async function init() {
+  // Load January 2019 first so the default date (2019-01-01) has data immediately.
+  // Neighboring months load in the background as the user navigates.
   await Promise.all([
     loadCoefficients(),
-    loadSolarWindData(2019),
+    loadMonth(2026, 1),
   ]);
-  setSolarWindDataNote('Solar wind: Qin-Denton Hourly (2019)');
+  setSolarWindDataNote('Solar wind: Qin-Denton/WGhour.d (2026)');
   const initUnix = Math.floor(new Date(params.datetimeString).getTime() / 1000);
   applyDataSolarWind(initUnix);
   lastDataHour = Math.floor(initUnix / 3600) * 3600;

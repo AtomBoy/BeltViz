@@ -25,15 +25,23 @@ Output goes to `public/data/igrf14coeffs.json`. The converter supports all epoch
 
 ### Solar wind data conversion
 
-Historical hourly solar wind data comes from the NASA OMNI2 dataset. To regenerate or add a year:
+Historical hourly solar wind data (with G1/G2 for T01) comes from `public/data/WGhour.d` — a file
+produced by the [rweigel/QinDenton](https://github.com/rweigel/QinDenton) Fortran tool. It covers
+1963 to present and is the preferred source. When that file is present the script uses it
+automatically. To regenerate or add a year:
 
 ```bash
-node scripts/convert-solarwind.js 2025          # downloads from NASA SPDF and writes public/data/solarwind-2025.json
+node scripts/convert-solarwind.js 2025          # auto-detects WGhour.d, writes public/data/solarwind-2025.json
 node scripts/convert-solarwind.js 2024          # any year back to 1963
-node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # use a pre-downloaded local file
+node scripts/convert-solarwind.js 2025 public/data/WGhour.d  # explicit WGhour.d path
+node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat   # explicit OMNI2 file (no G1/G2)
 ```
 
-Output goes to `public/data/solarwind-YYYY.json`. The format is columnar JSON with Unix epoch timestamps and five parameters: `vSw` (km/s), `nSw` (cm⁻³), `By` (nT GSM), `Bz` (nT GSM), `Dst` (nT). Missing hours from the OMNI source are stored as `null`; the app interpolates at runtime. See `SOLAR_WIND_DATA.md` for the full data format specification and source documentation.
+If WGhour.d is absent the script falls back to ISWA Qin-Denton (years ≤2019, network) or NASA OMNI2
+(any year, network, but G1/G2 will be null). Output goes to `public/data/solarwind-YYYY.json`.
+The format is columnar JSON (version 2.0) with Unix epoch timestamps and seven parameters: `vSw`
+(km/s), `nSw` (cm⁻³), `By` (nT GSM), `Bz` (nT GSM), `Dst` (nT), `G1`, `G2`. Missing hours are
+stored as `null`; the app interpolates at runtime. See `SOLAR_WIND_DATA.md` for the full format spec.
 
 ## Architecture
 
@@ -143,14 +151,7 @@ When adding a new physics model, algorithm, or data source:
 - [ ] The field lines had a bug where they were drawn too many times during 'Sun Direction' adjustment. This was incorrect, but it looked good. Lets explore methods of drawing more field lines. It might be interesting to draw multiple lines reflecting the range of certianty in the model or expected varianace. The longer lines would vary more.
 - [X] The info for the satellite is hidden under the ui. Move it to the top left. **Fixed: environmentReadout moved to top-left (top:155px) below the info overlay.**
 - [X] The year (epoch) of the IGRF model that's being used should be shown in infoOverlay.js.
-- [ ] We were able to run the code at https://github.com/rweigel/QinDenton/tree/master and produce the file `public/data/WGhour.d`. Does this file suit our needs for the T01 model? It looks like it has data including G1 and G2 from near the end of 1963 to present. Here are the first few lines: ``` Year Day Hr  ByIMF  BzIMF   V_SW  Den_P   Pdyn     G1     G2     G3  8 status     kp   akp3   dst    Bz1    Bz2    Bz3    Bz4    Bz5    Bz6       W1       W2       W3       W4       W5       W6  6 stat
- 1963 331 14   1.50  -0.20  285.0  10.50   1.71   0.17   0.28   0.30  22222222   0.70   0.70    -3  -0.20  -0.20  -0.20  -0.20  -0.20  -0.20    0.022    0.086    0.000    0.007    0.066    0.155  222222
- 1963 331 15   0.50   1.70  285.0  12.00   1.95   0.04   0.00   0.01  22222222   0.30   0.13    -3   1.70   1.70   1.70   1.70   1.70   1.70    0.015    0.043    0.000    0.004    0.021    0.064  222222
- 1963 331 16   2.70   3.70  285.0  12.00   1.95   0.04   0.00   0.00  22222222   0.30   0.17    -1   3.70   3.70   3.70   3.70   3.70   3.70    0.010    0.021    0.000    0.002    0.007    0.027  222222
-```
-We also have `public/data/omni2_all_years.dat` that the script used as source data.
-We should sanity check the `WGhour.d` data against what we were able to download if we decide to use it.
-It would be nice to have recent data when we start on the satellite visualization.
+- [X] We were able to run the code at https://github.com/rweigel/QinDenton/tree/master and produce the file `public/data/WGhour.d`. **WGhour.d is now the preferred data source.** It covers 1963–present (current!), includes G1/G2 (required for T01), and the script auto-detects it. Sanity check confirmed: 8760/8760 records with zero nulls for 2022 and 2025; G1/G2 values physically plausible (G1 range 0–67, mean ~2.3).
 - [ ] Grouping the solar wind data by year makes the data file a little large. Our web server is low bandwidth. Many users of the tool won't scroll more than a few days. Lets make monthly data files and load them as needed.
 - [ ] Create an about.html page to explain what the app does and cite our data sources and the software that we have used. Much of this content will be in our .md files that we've used for planning.
 

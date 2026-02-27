@@ -15,6 +15,7 @@ export function createInfoOverlay() {
       Texture: NASA Blue Marble
     </p>
     <p id="sw-data-note" class="attribution"></p>
+    <p class="attribution"><a href="/about.html" target="_blank">About &amp; Data Sources</a></p>
   `;
   document.body.appendChild(div);
 
