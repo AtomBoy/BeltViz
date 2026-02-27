@@ -20,7 +20,9 @@ The Space Weather Modeling Framework (SWMF) is probably too involved and compute
 
 - **Magnetopause model**: Shue et al. 1998, "Magnetopause location under extreme solar wind conditions", JGR 103(A8):17691-17700 ([doi:10.1029/98JA01103](https://doi.org/10.1029/98JA01103))
 - **Magnetopause shape**: Shue et al. 1997, "A new functional form to study the solar wind control of the magnetopause size and shape", JGR 102(A5):9497-9511 ([doi:10.1029/97JA00196](https://doi.org/10.1029/97JA00196))
-- **Full Tsyganenko T96 external field model** (semi-empirical, ~2000+ lines see [plan notes](https://geo.phys.spbu.ru/~tsyganenko/empirical-models/) and [CCMC](https://ccmc.gsfc.nasa.gov/models/Tsyganenko%20Magnetic%20Field~T96/)) This model was considered early on and we decided it was too much work. It might be time to commit to doing this work to at least establish a baseline.
+- **Tsyganenko T96** — considered and skipped. T01 is the direct target (T96 is an interim step with no advantage given G1/G2 are now available from Qin-Denton).
+- **Tsyganenko T01** — **current implementation target**. Same closed-form current-system architecture as T89c (~2–5× more compute, still O(1) per evaluation). Adds direct Pdyn/Dst/By/Bz inputs and G1/G2 storm-history indices. G1/G2 sourced from Qin-Denton pre-computed hourly database (NASA ISWA).
+- **Tsyganenko TA15 / TA16 RBF** — evaluated and **ruled out**. TA16 uses 1,296 radial basis function centres per B-field evaluation (~70,000 ops/call vs T89c's ~50 ops/call — roughly 1,400× slower). At ~120,000 B-field calls per field-line rebuild, TA16 would require ~200 minutes per frame. Spatial coverage (X ≥ −15 Re) is identical to T01, so there is no spatial advantage either.
 
 # Our Goal
 

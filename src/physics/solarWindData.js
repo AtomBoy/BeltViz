@@ -22,7 +22,7 @@ const MAX_INTERP_GAP = 6; // maximum gap length (hours) to interpolate across
  *
  * @param {number} year - Calendar year (e.g. 2025)
  */
-export async function loadSolarWindData(year = 2025) {
+export async function loadSolarWindData(year = 2019) {
   const response = await fetch(`./data/solarwind-${year}.json`);
   if (!response.ok) throw new Error(`Failed to load solarwind-${year}.json: ${response.status}`);
   data = await response.json();
@@ -88,8 +88,10 @@ function resolveNull(arr, idx) {
  *
  * @param {number} unixSeconds - UTC Unix timestamp in seconds
  * @returns {{ vSw: number|null, nSw: number|null, By: number|null,
- *             Bz: number|null, Dst: number|null, interpolated: boolean } | null}
+ *             Bz: number|null, Dst: number|null,
+ *             G1: number|null, G2: number|null, interpolated: boolean } | null}
  *   Returns null when no data is loaded or the time is outside the loaded year.
+ *   G1 and G2 are null for years without Qin-Denton data (> 2019).
  */
 export function getSolarWindAtTime(unixSeconds) {
   if (!data) return null;
@@ -117,6 +119,8 @@ export function getSolarWindAtTime(unixSeconds) {
     By:  get(data.By),
     Bz:  get(data.Bz),
     Dst: get(data.Dst),
+    G1:  data.G1 ? get(data.G1) : null,
+    G2:  data.G2 ? get(data.G2) : null,
     interpolated,
   };
 }

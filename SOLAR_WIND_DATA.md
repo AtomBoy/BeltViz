@@ -81,15 +81,15 @@ for a future "live" mode but is out of scope for Phase 4.
 | IMF By (GSM) | T96, T01 | 8 | ✅ mag JSON | nT |
 | IMF Bz (GSM) | T89, T96, T01 | 9 | ✅ mag JSON | nT |
 | Dst | T89 (via Kp), T96, T01 | 41 | ❌ separate feed | nT |
-| G1, G2 | T01 only | derived | — | 1-hour integrals |
+| G1, G2 | T01 only | Qin-Denton | — | Pre-computed hourly (Qin et al. 2007) |
 
 **Dst note**: Dst is not measured at L1 — it's derived from ground-based magnetometers and
 published separately (Kyoto WDC). It's included in the OMNI merged dataset, making OMNI the
 cleanest single-source option.
 
-**G1/G2 note**: These can be computed from a rolling 1-hour window of vSw and By values
-(see Tsyganenko & Sitnov 2005 for the exact formula). Once hourly OMNI data is loaded,
-G1/G2 can be computed on-the-fly during playback.
+**G1/G2 note**: G1 and G2 are pre-computed and published by Qin et al. (2007) via the
+Qin-Denton database (NASA ISWA). We download and merge them alongside OMNI2 data rather
+than computing them from scratch (the formula is non-trivial and requires solar wind history).
 
 ---
 
@@ -111,26 +111,30 @@ One year gzipped = **~100 KB**. Five years = **~500 KB**. Negligible vs. Three.j
 
 ---
 
-## 5. Recommended File Format
+## 5. File Format (v2.0)
+
+Single merged file combining OMNI2 and Qin-Denton, one per calendar year.
 
 ```json
 {
-  "version": "1.0",
-  "source": "NASA OMNI Low-Res (hourly), omni2_YYYY.dat",
-  "year": 2024,
+  "version": "2.0",
+  "sources": ["NASA OMNI2 hourly (omni2_YYYY.dat)", "Qin-Denton hourly (NASA ISWA)"],
+  "year": 2025,
   "timeStep": 3600,
-  "referenceIso": "2024-01-01T00:00:00Z",
-  "epochs": [1704067200, 1704070800, ...],
-  "vSw": [400.5, 401.2, ...],
-  "nSw": [5.1, null, ...],
-  "By": [0.2, 0.1, ...],
-  "Bz": [-0.5, 0.0, ...],
-  "Dst": [-10, -5, ...]
+  "referenceIso": "2025-01-01T00:00:00Z",
+  "epochs": [1735689600, 1735693200, ...],
+  "vSw": [427, 446, ...],
+  "nSw": [19.6, 16.8, ...],
+  "By":  [10.1, 8.1, ...],
+  "Bz":  [-1.0, -3.2, ...],
+  "Dst": [-26, -30, ...],
+  "G1":  [1.2, 1.1, ...],
+  "G2":  [0.8, 0.7, ...]
 }
 ```
 
-`null` values represent missing/fill-value hours (pass through as `NaN` at runtime and fall
-back to the previous good value or the quiet-storm default).
+`null` values represent missing/fill-value hours in either source. The app interpolates
+across gaps of ≤ 6 hours at runtime; longer gaps are left as null.
 
 **Location**: `public/data/solarwind-YYYY.json`
 **One file per calendar year** for incremental updates and lazy loading.
@@ -141,34 +145,27 @@ back to the previous good value or the quiet-storm default).
 
 ### `scripts/convert-solarwind.js`
 
-Mirrors `scripts/convert-igrf.js`:
+Downloads and merges OMNI2 + Qin-Denton into a single output file.
 
 ```
 USAGE:
-  node scripts/convert-solarwind.js 2024
-  node scripts/convert-solarwind.js 2020 2024   # batch: 2020–2024
+  node scripts/convert-solarwind.js 2025
+  node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat   # pre-downloaded OMNI file
 ```
 
 **Pipeline**:
-1. Fetch `https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_YYYY.dat`
-   (or read a local copy passed as a 3rd argument)
-2. Parse fixed-width columns (year/doy/hour → ISO timestamp → Unix epoch)
-3. Replace fill values (999.9, 9999, 99999) with `null`
-4. Transpose row-oriented records into columnar arrays
-5. Write `public/data/solarwind-YYYY.json`
+1. Fetch OMNI2: `https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_YYYY.dat`
+2. Parse space-separated fields (already implemented); extract vSw, nSw, By, Bz, Dst
+3. Fetch Qin-Denton hourly from NASA ISWA; parse header to locate G1, G2 columns
+4. Align both sources on matching Unix epoch timestamps (both are hourly)
+5. Write merged `public/data/solarwind-YYYY.json` (version 2.0, overwrites v1.0)
 
-The OMNI format is fixed-width (no delimiter), so parsing requires column byte offsets from
-the format spec at `omni2.text`. Key offsets (1-indexed character positions):
-- Cols 1–4: Year (YYYY)
-- Cols 6–8: Day of year
-- Cols 10–11: Hour (0–23)
-- By GSM: starts at col 109 (width 8)
-- Bz GSM: starts at col 118 (width 8)
-- Speed: starts at col 224 (width 6)
-- Density: starts at col 231 (width 6)
-- Dst: starts at col 327 (width 6)
+**OMNI2 column indices** (0-based after whitespace split — already implemented):
+- year[0], doy[1], hour[2], By[15], Bz[16], density[23], speed[24], Dst[40]
 
-*(Exact offsets should be verified against the format spec before implementation.)*
+**Qin-Denton format**: Space-delimited ASCII, ~44 columns with a JSON or comment header
+identifying column names. G1 and G2 column indices must be confirmed from an actual file
+before implementation.
 
 ---
 
@@ -225,9 +222,8 @@ Add year-selector dropdown (2016–current) and a "Data loaded" / "No data" indi
 2. **Dst timing**: Dst is published with ~1-hour latency. For near-real-time use, the last
    few hours of Dst may be preliminary. Mark provisional values with a quality flag.
 
-3. **G1/G2 formula**: For T01, the exact integral definitions from Tsyganenko & Sitnov (2005)
-   should be coded in `solarWindData.js` as `computeG1G2(hourlyWindow)`. The window is
-   typically 1 hour for G1 and the full storm period for G2 — confirm from the paper.
+3. ~~**G1/G2 formula**~~: **Resolved** — G1/G2 are pre-computed by Qin et al. and downloaded
+   from the Qin-Denton database. No in-app formula needed.
 
 4. **Gap filling**: OMNI has gaps (spacecraft maneuvers, instrument outages). For playback,
    decide whether to interpolate across gaps (up to N hours) or display a "no data" notice.

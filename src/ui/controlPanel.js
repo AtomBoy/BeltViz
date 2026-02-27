@@ -108,9 +108,9 @@ export function createControlPanel(params, callbacks) {
   const solarFolder = gui.addFolder('Solar Wind');
 
   const PRESETS = {
-    Quiet: { vSw: 400, nSw: 5, imfBz: 0, dst: 0 },
-    'Moderate Storm': { vSw: 500, nSw: 10, imfBz: -5, dst: -50 },
-    'Severe Storm': { vSw: 700, nSw: 20, imfBz: -15, dst: -150 },
+    Quiet: { vSw: 400, nSw: 5, imfBy: 0, imfBz: 0, dst: 0 },
+    'Moderate Storm': { vSw: 500, nSw: 10, imfBy: 2, imfBz: -5, dst: -50 },
+    'Severe Storm': { vSw: 700, nSw: 20, imfBy: 5, imfBz: -15, dst: -150 },
   };
 
   solarFolder.add(params, 'solarWindEnabled').name('Enable Solar Wind').onChange(onSolarWindChange);
@@ -122,6 +122,7 @@ export function createControlPanel(params, callbacks) {
     if (!p) return;
     params.solarWindSpeed = p.vSw;
     params.solarWindDensity = p.nSw;
+    params.imfBy = p.imfBy;
     params.imfBz = p.imfBz;
     params.dst = p.dst;
     // Update GUI controllers to reflect new values
@@ -133,6 +134,9 @@ export function createControlPanel(params, callbacks) {
     if (params.solarWindEnabled) onSolarWindChange();
   });
   const cDensity = solarFolder.add(params, 'solarWindDensity', 1, 30, 0.5).name('Density (cm⁻³)').onChange(() => {
+    if (params.solarWindEnabled) onSolarWindChange();
+  });
+  const cBy      = solarFolder.add(params, 'imfBy', -20, 20, 0.5).name('IMF By (nT)').onChange(() => {
     if (params.solarWindEnabled) onSolarWindChange();
   });
   const cBz      = solarFolder.add(params, 'imfBz', -20, 20, 0.5).name('IMF Bz (nT)').onChange(() => {
@@ -152,6 +156,7 @@ export function createControlPanel(params, callbacks) {
   function refreshSolarWindControls() {
     cSpeed.updateDisplay();
     cDensity.updateDisplay();
+    cBy.updateDisplay();
     cBz.updateDisplay();
     cDst.updateDisplay();
   }

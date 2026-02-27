@@ -65,15 +65,18 @@ const params = {
   solarWindEnabled: true,
   solarWindSpeed: 400,
   solarWindDensity: 5,
+  imfBy: 0,             // IMF By (nT GSM) — dawn-dusk field component, T01 input
   imfBz: 0,
   dst: 0,
+  g1: 0,                // T01 storm-history index G1 (Qin-Denton pre-computed)
+  g2: 0,                // T01 storm-history index G2 (Qin-Denton pre-computed)
   sunLongitude: 0,      // internal — computed from datetime, not a user slider
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
   // Default to the start of the loaded solar wind data file so historical
   // playback works immediately on launch.
-  datetimeString: '2025-01-01T00:00',
+  datetimeString: '2019-01-01T00:00',
 };
 
 /**
@@ -102,8 +105,11 @@ function getSolarWindParams() {
     enabled: true,
     vSw: params.solarWindSpeed,
     nSw: params.solarWindDensity,
+    imfBy: params.imfBy,
     imfBz: params.imfBz,
     dst: params.dst,
+    g1: params.g1,
+    g2: params.g2,
     sunLonRad: params.sunLongitude * Math.PI / 180,
     ps: params.sunDeclination * Math.PI / 180, // dipole tilt ≈ solar declination
   };
@@ -823,8 +829,11 @@ function applyDataSolarWind(unixSeconds) {
   if (!sw) return;
   if (sw.vSw !== null) params.solarWindSpeed   = Math.min(800, Math.max(300, Math.round(sw.vSw)));
   if (sw.nSw !== null) params.solarWindDensity = Math.min(30,  Math.max(1,   Math.round(sw.nSw * 10) / 10));
+  if (sw.By  !== null) params.imfBy            = Math.min(20,  Math.max(-20, Math.round(sw.By  * 10) / 10));
   if (sw.Bz  !== null) params.imfBz            = Math.min(20,  Math.max(-20, Math.round(sw.Bz  * 10) / 10));
   if (sw.Dst !== null) params.dst              = Math.min(50,  Math.max(-200, Math.round(sw.Dst)));
+  if (sw.G1  !== null) params.g1               = Math.max(0, sw.G1);
+  if (sw.G2  !== null) params.g2               = Math.max(0, sw.G2);
   refreshSolarWindControls();
 }
 
@@ -933,9 +942,9 @@ function animate(now) {
 async function init() {
   await Promise.all([
     loadCoefficients(),
-    loadSolarWindData(2025),
+    loadSolarWindData(2019),
   ]);
-  setSolarWindDataNote('Solar wind: NASA OMNI2 Hourly (2025)');
+  setSolarWindDataNote('Solar wind: Qin-Denton Hourly (2019)');
   const initUnix = Math.floor(new Date(params.datetimeString).getTime() / 1000);
   applyDataSolarWind(initUnix);
   lastDataHour = Math.floor(initUnix / 3600) * 3600;

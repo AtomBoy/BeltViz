@@ -2,74 +2,98 @@
 /**
  * convert-solarwind.js
  *
- * Downloads and converts NASA OMNI2 hourly solar wind data for one year
- * into the columnar JSON format used by BeltViz.
+ * Builds public/data/solarwind-YYYY.json — a columnar JSON file with hourly
+ * solar wind parameters used by BeltViz for historical playback and as T01 inputs.
+ *
+ * DATA SOURCES
+ * ─────────────
+ * For years 1995–2019 (Qin-Denton coverage, ISWA/NASA server):
+ *   Uses the Qin-Denton database (Qin et al. 2007, Space Weather).
+ *   Source: https://iswa.gsfc.nasa.gov/iswa_data_tree/composite/magnetosphere/Qin-Denton/hour/
+ *   Files:  QinDenton_YYYYMMDD_hour.txt  (one per calendar day, in year/month/ subdirectories)
+ *   Contains all solar wind fields AND pre-computed G1, G2 for Tsyganenko T01.
+ *   Note: rbsp-ect.newmexicoconsortium.org extends to ~2022 but rate-limits aggressively.
+ *
+ * For years > 2019 (OMNI2 fallback):
+ *   Uses NASA OMNI2 low-resolution hourly dataset.
+ *   Source: https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2_YYYY.dat
+ *   G1 and G2 arrays will be all-null (T01 will run with storm-history = 0).
  *
  * Usage:
- *   node scripts/convert-solarwind.js [year]            # downloads from NASA SPDF
- *   node scripts/convert-solarwind.js [year] [file.dat] # reads local OMNI2 .dat file
+ *   node scripts/convert-solarwind.js 2019            # Qin-Denton year (recommended, ISWA/NASA)
+ *   node scripts/convert-solarwind.js 2025            # OMNI2 fallback (no G1/G2)
+ *   node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # local OMNI2 file
  *
- * Output: public/data/solarwind-YYYY.json
+ * Output: public/data/solarwind-YYYY.json (version 2.0 format)
  *
- * Source: NASA OMNI2 low-resolution (hourly) dataset
- *   https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/
- *   Format spec: https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/omni2.text
+ * Missing/fill values are preserved as null. Interpolation is handled at runtime
+ * by src/physics/solarWindData.js.
  *
- * Missing/fill values in the source are preserved as null in the output JSON.
- * Interpolation is handled at runtime by the app (src/physics/solarWindData.js),
- * so the app can indicate when interpolated values are being displayed.
+ * QIN-DENTON column layout (0-based after whitespace split):
+ *   [0]  IsoDateTime  [1-6] Year/Month/Day/Hour/Min/Sec
+ *   [7]  ByIMF (nT)   [8]  BzIMF (nT)
+ *   [9]  Vsw (km/s)   [10] Den_P (cm⁻³)   [11] Pdyn (nPa)
+ *   [12] G1           [13] G2              [14] G3 (unused)
+ *   [15-22] status flags
+ *   [23] Kp           [24] akp3            [25] Dst (nT)
  *
- * OMNI2 column indices (0-based, after splitting each line on whitespace):
- *   [0]  Year
- *   [1]  Day of year (1-based)
- *   [2]  Hour (0-23)
- *   [15] By GSM (nT), fill = 999.9
- *   [16] Bz GSM (nT), fill = 999.9
- *   [23] Proton density (N/cm³), fill = 999.9
- *   [24] Plasma flow speed (km/s), fill = 9999.
- *   [40] Dst index (nT), fill = 99999
+ * OMNI2 column layout (0-based after whitespace split):
+ *   [0]  Year  [1] Day-of-year  [2] Hour
+ *   [15] By GSM (nT)   [16] Bz GSM (nT)
+ *   [23] Proton density (cm⁻³)   [24] Flow speed (km/s)
+ *   [40] Dst index (nT)
  */
 
 import { writeFileSync, readFileSync } from 'node:fs';
-import { get } from 'node:https';
+import { get  as httpsGet }  from 'node:https';
+import { get  as httpGet  }  from 'node:http';
 import { URL } from 'node:url';
 
-// 0-based column indices after whitespace-splitting each data line
-const COL = {
+// Last year with Qin-Denton data available on ISWA (NASA server — reliable, no SSL issues).
+// rbsp-ect.newmexicoconsortium.org has data to ~2022 but rate-limits aggressively; use ISWA instead.
+const QD_MAX_YEAR = 2019;
+// ISWA URL structure: /iswa_data_tree/composite/magnetosphere/Qin-Denton/hour/{YYYY}/{MM}/QinDenton_{YYYYMMDD}_hour.txt
+const QD_HOST = 'iswa.gsfc.nasa.gov';
+const QD_PATH = '/iswa_data_tree/composite/magnetosphere/Qin-Denton/hour';
+
+// Qin-Denton column indices (0-based after whitespace split)
+const QD_COL = {
+  iso:  0,
+  by:   7,   // ByIMF (nT)
+  bz:   8,   // BzIMF (nT)
+  vsw:  9,   // Solar wind speed (km/s)
+  nSw:  10,  // Proton density (cm⁻³)
+  g1:   12,  // G1 disturbance index for T01
+  g2:   13,  // G2 disturbance index for T01
+  dst:  25,  // Dst index (nT)
+};
+
+// OMNI2 column indices
+const OMNI_COL = {
   year:    0,
   doy:     1,
   hour:    2,
-  By:      15,  // By GSM (nT)
-  Bz:      16,  // Bz GSM (nT)
-  density: 23,  // Proton density (N/cm³)
-  speed:   24,  // Plasma flow speed (km/s)
-  Dst:     40,  // Dst index (nT)
+  By:      15,
+  Bz:      16,
+  density: 23,
+  speed:   24,
+  Dst:     40,
 };
 
-// Fill (missing) values used by OMNI2
-const FILL = {
-  By:      999.9,
-  Bz:      999.9,
-  density: 999.9,
-  speed:   9999,   // stored as "9999." in F6.0 format — parses to 9999
-  Dst:     99999,
-};
+// Fill (missing) values — same for both sources (OMNI-derived)
+const FILL_MAG    = 999.9;   // By, Bz, density, G1, G2
+const FILL_SPEED  = 9999;    // Vsw
+const FILL_DST    = 99999;   // Dst
 
-// Convert year + day-of-year (1-based) + hour (0-23) → Unix timestamp (seconds)
-function toUnix(year, doy, hour) {
-  return Math.floor(Date.UTC(year, 0, 1) / 1000) + (doy - 1) * 86400 + hour * 3600;
-}
+function isFill(v, fill) { return Math.abs(v - fill) < 0.5; }
 
-function isFill(value, fillValue) {
-  return Math.abs(value - fillValue) < 0.5;
-}
+// ─── HTTP helpers ────────────────────────────────────────────────────────────
 
 function fetchUrl(urlStr) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(urlStr);
-    const options = { hostname: parsed.hostname, path: parsed.pathname + parsed.search };
-    get(options, (res) => {
-      // Follow redirects
+    const lib    = parsed.protocol === 'https:' ? httpsGet : httpGet;
+    lib(parsed.href, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
         return fetchUrl(res.headers.location).then(resolve).catch(reject);
       }
@@ -77,24 +101,202 @@ function fetchUrl(urlStr) {
         return reject(new Error(`HTTP ${res.statusCode} for ${urlStr}`));
       }
       const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end',  () => resolve(Buffer.concat(chunks).toString('utf8')));
+      res.on('data',  (c) => chunks.push(c));
+      res.on('end',   () => resolve(Buffer.concat(chunks).toString('utf8')));
       res.on('error', reject);
     }).on('error', reject);
   });
 }
 
-async function main() {
-  const year      = parseInt(process.argv[2] || new Date().getUTCFullYear() - 1, 10);
-  const localFile = process.argv[3] || null;
+// Download in parallel batches to avoid overwhelming the server
+async function fetchBatch(urls, batchSize = 20) {
+  const results = new Array(urls.length);
+  for (let i = 0; i < urls.length; i += batchSize) {
+    const slice   = urls.slice(i, i + batchSize);
+    const fetched = await Promise.all(slice.map((u) => fetchUrl(u).catch(() => null)));
+    for (let j = 0; j < fetched.length; j++) results[i + j] = fetched[j];
+    process.stdout.write(`\r  Downloaded ${Math.min(i + batchSize, urls.length)} / ${urls.length} files...`);
+  }
+  process.stdout.write('\n');
+  return results;
+}
 
-  if (isNaN(year) || year < 1963 || year > 2099) {
-    console.error('Usage: node scripts/convert-solarwind.js [year] [optional-local-file.dat]');
-    process.exit(1);
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function daysInYear(y) { return isLeap(y) ? 366 : 365; }
+
+// year + doy (1-based) + hour → Unix seconds
+function toUnix(year, doy, hour) {
+  return Math.floor(Date.UTC(year, 0, 1) / 1000) + (doy - 1) * 86400 + hour * 3600;
+}
+
+// year + month (1-based) + day (1-based) → day-of-year (1-based)
+function toDoy(year, month, day) {
+  const monthDays = [0,31,28,31,30,31,30,31,31,30,31,30,31];
+  if (isLeap(year)) monthDays[2] = 29;
+  let doy = day;
+  for (let m = 1; m < month; m++) doy += monthDays[m];
+  return doy;
+}
+
+// YYYYMMDD string → { year, month, day }
+function parseDateStr(s) {
+  return { year: +s.slice(0,4), month: +s.slice(4,6), day: +s.slice(6,8) };
+}
+
+// ─── Qin-Denton path ─────────────────────────────────────────────────────────
+
+function qdUrl(year, month, day) {
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  // ISWA URL: /iswa_data_tree/composite/magnetosphere/Qin-Denton/hour/YYYY/MM/QinDenton_YYYYMMDD_hour.txt
+  return `https://${QD_HOST}${QD_PATH}/${year}/${mm}/QinDenton_${year}${mm}${dd}_hour.txt`;
+}
+
+function allDatesInYear(year) {
+  const dates = [];
+  const monthDays = [0,31,28,31,30,31,30,31,31,30,31,30,31];
+  if (isLeap(year)) monthDays[2] = 29;
+  for (let m = 1; m <= 12; m++) {
+    for (let d = 1; d <= monthDays[m]; d++) dates.push({ year, month: m, day: d });
+  }
+  return dates;
+}
+
+function parseQdText(text, year) {
+  const rows = [];
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const p = line.split(/\s+/);
+    if (p.length < 30) continue;
+
+    // Parse ISO datetime: 2022-01-01T00:00:00
+    const isoStr = p[QD_COL.iso];
+    if (!isoStr || isoStr.length < 19) continue;
+    const unixMs = Date.parse(isoStr);
+    if (isNaN(unixMs)) continue;
+    const unixSec = Math.floor(unixMs / 1000);
+
+    // Filter to requested year
+    const rowYear = parseInt(p[1], 10);
+    if (rowYear !== year) continue;
+
+    const by   = parseFloat(p[QD_COL.by]);
+    const bz   = parseFloat(p[QD_COL.bz]);
+    const vsw  = parseFloat(p[QD_COL.vsw]);
+    const nSw  = parseFloat(p[QD_COL.nSw]);
+    const g1   = parseFloat(p[QD_COL.g1]);
+    const g2   = parseFloat(p[QD_COL.g2]);
+    const dst  = parseFloat(p[QD_COL.dst]);
+
+    rows.push({
+      epoch: unixSec,
+      by:   isFill(by,  FILL_MAG)   ? null : Math.round(by  * 10) / 10,
+      bz:   isFill(bz,  FILL_MAG)   ? null : Math.round(bz  * 10) / 10,
+      vsw:  isFill(vsw, FILL_SPEED) ? null : Math.round(vsw),
+      nSw:  isFill(nSw, FILL_MAG)   ? null : Math.round(nSw * 10) / 10,
+      g1:   isFill(g1,  FILL_MAG)   ? null : Math.round(g1  * 100) / 100,
+      g2:   isFill(g2,  FILL_MAG)   ? null : Math.round(g2  * 100) / 100,
+      dst:  Math.abs(dst) >= FILL_DST ? null : Math.round(dst),
+    });
+  }
+  return rows;
+}
+
+async function buildFromQinDenton(year) {
+  console.log(`Downloading Qin-Denton hourly files for ${year}...`);
+  const dates = allDatesInYear(year);
+  const urls  = dates.map(({ year: y, month: m, day: d }) => qdUrl(y, m, d));
+  const texts = await fetchBatch(urls, 20);
+
+  const rowMap = new Map(); // epoch → row (dedup + sort by epoch)
+  let files404 = 0;
+  for (const text of texts) {
+    if (!text) { files404++; continue; }
+    for (const row of parseQdText(text, year)) {
+      rowMap.set(row.epoch, row);
+    }
+  }
+  if (files404 > 0) console.log(`  (${files404} daily files unavailable — nulls for those days)`);
+
+  // Sort by epoch and flatten into columnar arrays
+  const sorted = [...rowMap.entries()].sort((a, b) => a[0] - b[0]).map(([, r]) => r);
+
+  const epochs = [], vSw = [], nSw = [], By = [], Bz = [], Dst = [], G1 = [], G2 = [];
+  const nullCount = { vSw: 0, nSw: 0, By: 0, Bz: 0, Dst: 0, G1: 0, G2: 0 };
+
+  for (const r of sorted) {
+    epochs.push(r.epoch);
+    vSw.push(r.vsw); if (r.vsw === null) nullCount.vSw++;
+    nSw.push(r.nSw); if (r.nSw === null) nullCount.nSw++;
+    By.push(r.by);   if (r.by  === null) nullCount.By++;
+    Bz.push(r.bz);   if (r.bz  === null) nullCount.Bz++;
+    Dst.push(r.dst);  if (r.dst  === null) nullCount.Dst++;
+    G1.push(r.g1);   if (r.g1  === null) nullCount.G1++;
+    G2.push(r.g2);   if (r.g2  === null) nullCount.G2++;
   }
 
-  console.log(`Processing OMNI2 hourly solar wind data for ${year}...`);
+  const expected = daysInYear(year) * 24;
+  console.log(`Parsed ${sorted.length} / ${expected} expected hourly records`);
+  console.log(`Null counts — vSw:${nullCount.vSw} nSw:${nullCount.nSw} By:${nullCount.By} Bz:${nullCount.Bz} Dst:${nullCount.Dst} G1:${nullCount.G1} G2:${nullCount.G2}`);
 
+  return {
+    version:      '2.0',
+    sources:      ['Qin-Denton hourly (iswa.gsfc.nasa.gov — Qin et al. 2007)'],
+    year,
+    timeStep:     3600,
+    referenceIso: new Date(epochs[0] * 1000).toISOString().slice(0, 19) + 'Z',
+    epochs, vSw, nSw, By, Bz, Dst, G1, G2,
+  };
+}
+
+// ─── OMNI2 path (fallback for years > QD_MAX_YEAR) ──────────────────────────
+
+function parseOmni2Text(text, year) {
+  const epochs = [], vSw = [], nSw = [], By = [], Bz = [], Dst = [];
+  const nullCount = { vSw: 0, nSw: 0, By: 0, Bz: 0, Dst: 0 };
+  let parsed = 0;
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const p = line.split(/\s+/);
+    if (p.length < 55) continue;
+    if (parseInt(p[OMNI_COL.year], 10) !== year) continue;
+
+    const doy  = parseInt(p[OMNI_COL.doy],  10);
+    const hour = parseInt(p[OMNI_COL.hour], 10);
+    epochs.push(toUnix(year, doy, hour));
+
+    const speed = parseFloat(p[OMNI_COL.speed]);
+    if (isFill(speed, FILL_SPEED)) { vSw.push(null); nullCount.vSw++; }
+    else vSw.push(Math.round(speed));
+
+    const dens = parseFloat(p[OMNI_COL.density]);
+    if (isFill(dens, FILL_MAG)) { nSw.push(null); nullCount.nSw++; }
+    else nSw.push(Math.round(dens * 10) / 10);
+
+    const by = parseFloat(p[OMNI_COL.By]);
+    if (isFill(by, FILL_MAG)) { By.push(null); nullCount.By++; }
+    else By.push(Math.round(by * 10) / 10);
+
+    const bz = parseFloat(p[OMNI_COL.Bz]);
+    if (isFill(bz, FILL_MAG)) { Bz.push(null); nullCount.Bz++; }
+    else Bz.push(Math.round(bz * 10) / 10);
+
+    const dstVal = parseInt(p[OMNI_COL.Dst], 10);
+    if (Math.abs(dstVal) >= FILL_DST) { Dst.push(null); nullCount.Dst++; }
+    else Dst.push(dstVal);
+
+    parsed++;
+  }
+
+  return { epochs, vSw, nSw, By, Bz, Dst, parsed, nullCount };
+}
+
+async function buildFromOmni2(year, localFile) {
   let text;
   if (localFile) {
     text = readFileSync(localFile, 'utf8');
@@ -106,86 +308,45 @@ async function main() {
     console.log(`Downloaded ${(text.length / 1024).toFixed(0)} KB`);
   }
 
-  const epochs = [];
-  const vSw    = [];
-  const nSw    = [];
-  const By     = [];
-  const Bz     = [];
-  const Dst    = [];
+  const { epochs, vSw, nSw, By, Bz, Dst, parsed, nullCount } = parseOmni2Text(text, year);
+  const expected = daysInYear(year) * 24;
+  console.log(`Parsed ${parsed} / ${expected} expected hourly records`);
+  console.log(`Null counts — vSw:${nullCount.vSw} nSw:${nullCount.nSw} By:${nullCount.By} Bz:${nullCount.Bz} Dst:${nullCount.Dst}`);
+  console.log('Note: G1/G2 are null (Qin-Denton not available for this year). T01 will use G1=G2=0.');
 
-  const nullCount = { vSw: 0, nSw: 0, By: 0, Bz: 0, Dst: 0 };
-  let parsed = 0;
+  const G1 = new Array(epochs.length).fill(null);
+  const G2 = new Array(epochs.length).fill(null);
 
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
+  return {
+    version:      '2.0',
+    sources:      [`NASA OMNI2 Hourly (omni2_${year}.dat)`],
+    year,
+    timeStep:     3600,
+    referenceIso: new Date(epochs[0] * 1000).toISOString().slice(0, 19) + 'Z',
+    epochs, vSw, nSw, By, Bz, Dst, G1, G2,
+  };
+}
 
-    const p = line.split(/\s+/);
-    if (p.length < 55) continue;                       // malformed row
-    if (parseInt(p[COL.year], 10) !== year) continue;  // skip adjacent-year rows
+// ─── Main ────────────────────────────────────────────────────────────────────
 
-    const doy  = parseInt(p[COL.doy],  10);
-    const hour = parseInt(p[COL.hour], 10);
-    epochs.push(toUnix(year, doy, hour));
+async function main() {
+  const year      = parseInt(process.argv[2] || new Date().getUTCFullYear() - 1, 10);
+  const localFile = process.argv[3] || null;
 
-    // Speed (km/s) — round to integer, adequate for solar wind
-    const speed = parseFloat(p[COL.speed]);
-    if (isFill(speed, FILL.speed)) { vSw.push(null); nullCount.vSw++; }
-    else vSw.push(Math.round(speed));
-
-    // Proton density (N/cm³) — keep one decimal
-    const dens = parseFloat(p[COL.density]);
-    if (isFill(dens, FILL.density)) { nSw.push(null); nullCount.nSw++; }
-    else nSw.push(Math.round(dens * 10) / 10);
-
-    // By GSM (nT) — one decimal
-    const by = parseFloat(p[COL.By]);
-    if (isFill(by, FILL.By)) { By.push(null); nullCount.By++; }
-    else By.push(Math.round(by * 10) / 10);
-
-    // Bz GSM (nT) — one decimal
-    const bz = parseFloat(p[COL.Bz]);
-    if (isFill(bz, FILL.Bz)) { Bz.push(null); nullCount.Bz++; }
-    else Bz.push(Math.round(bz * 10) / 10);
-
-    // Dst index (nT) — integer
-    const dstVal = parseInt(p[COL.Dst], 10);
-    if (Math.abs(dstVal) >= FILL.Dst) { Dst.push(null); nullCount.Dst++; }
-    else Dst.push(dstVal);
-
-    parsed++;
-  }
-
-  if (parsed === 0) {
-    console.error(`No valid rows found for year ${year}. Check the source file.`);
+  if (isNaN(year) || year < 1963 || year > 2099) {
+    console.error('Usage: node scripts/convert-solarwind.js [year] [optional-local-omni2-file.dat]');
     process.exit(1);
   }
 
-  // Expected ~8760 rows for a normal year, 8784 for a leap year
-  const expectedRows = ((year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365) * 24;
-  const gapRows = expectedRows - parsed;
+  const useQD = year <= QD_MAX_YEAR && !localFile;
+  console.log(`Building solarwind-${year}.json  [source: ${useQD ? 'Qin-Denton' : 'OMNI2'}]`);
 
-  console.log(`Parsed ${parsed} / ${expectedRows} expected hourly records (${gapRows} gaps in source)`);
-  console.log(`Null counts — vSw: ${nullCount.vSw}, nSw: ${nullCount.nSw}, By: ${nullCount.By}, Bz: ${nullCount.Bz}, Dst: ${nullCount.Dst}`);
-
-  const referenceIso = new Date(epochs[0] * 1000).toISOString().slice(0, 19) + 'Z';
-
-  const output = {
-    version:      '1.0',
-    source:       `NASA OMNI2 Hourly (omni2_${year}.dat)`,
-    year,
-    timeStep:     3600,
-    referenceIso,
-    epochs,
-    vSw,
-    nSw,
-    By,
-    Bz,
-    Dst,
-  };
+  const output = useQD
+    ? await buildFromQinDenton(year)
+    : await buildFromOmni2(year, localFile);
 
   const outPath = `public/data/solarwind-${year}.json`;
-  const json = JSON.stringify(output);
+  const json    = JSON.stringify(output);
   writeFileSync(outPath, json);
   console.log(`Written: ${outPath} (${(json.length / 1024).toFixed(0)} KB uncompressed)`);
   console.log('Done.');

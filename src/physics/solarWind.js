@@ -1,22 +1,23 @@
 /**
  * Solar wind external magnetic field model.
  *
- * External field is computed by the Tsyganenko T89c empirical model, which
- * covers all major current systems: magnetotail, ring current, closure currents,
- * and Chapman-Ferraro + Birkeland currents. T89 is parameterized by a single
- * Kp index (0–6+) mapped from the solar wind parameters.
+ * External field is computed by the Tsyganenko T01 empirical model, which
+ * covers all major current systems: magnetotail, ring current, Birkeland
+ * currents, and dipole shielding. T01 is parameterised directly by solar wind
+ * dynamic pressure, Dst, IMF By/Bz, and the G1/G2 storm indices from the
+ * Qin-Denton database.
  *
  * The magnetopause boundary (Shue 1998) is retained as an outer confinement
- * envelope — T89 does not enforce a hard boundary cutoff.
+ * envelope — T01 does not enforce a hard boundary cutoff.
  *
  * References:
- * - Tsyganenko N.A., Planet. Space Sci., v.37, pp.5-20, 1989 (T89 model)
+ * - Tsyganenko N.A., JGR, 2002 (T01 model)
  * - Shue et al. 1997, JGR 102(A5):9497-9511
  * - Shue et al. 1998, JGR 103(A8):17691-17700
  */
 
 import { EARTH_RADIUS_KM } from '../utils/constants.js';
-import { t89 } from './t89.js';
+import { t01 } from './t01.js';
 
 const Re = EARTH_RADIUS_KM;
 
@@ -164,28 +165,38 @@ function smoothstep(x, edge0, edge1) {
 }
 
 /**
- * Compute the external magnetic field at a point using the T89 model.
+ * Compute the external magnetic field at a point using the T01 model.
  *
  * @param {number} xKm - Scene X in km
  * @param {number} yKm - Scene Y in km
  * @param {number} zKm - Scene Z in km
- * @param {object} solarWindParams - { vSw, nSw, imfBz, dst, sunLonRad, ps, enabled }
+ * @param {object} solarWindParams - { vSw, nSw, imfBy, imfBz, dst, g1, g2,
+ *                                     sunLonRad, ps, enabled }
  * @returns {number[]} [Bx, By, Bz] external field in nT (scene frame)
  */
 export function computeExternalB(xKm, yKm, zKm, solarWindParams) {
   if (!solarWindParams?.enabled) return [0, 0, 0];
 
-  const { sunLonRad, ps = 0 } = solarWindParams;
-  const iopt = solarWindToKp(solarWindParams);
+  const {
+    vSw = 400, nSw = 5,
+    imfBy = 0, imfBz = 0, dst = 0,
+    g1 = 0, g2 = 0,
+    sunLonRad, ps = 0,
+  } = solarWindParams;
 
-  // Convert scene km → GSM Earth radii (T89 expects Re)
+  const pdyn = computeDynamicPressure(vSw, nSw);
+
+  // parmod = [pdyn, dst, byimf, bzimf, g1, g2, 0, 0, 0, 0]
+  const parmod = [pdyn, dst, imfBy, imfBz, g1, g2, 0, 0, 0, 0];
+
+  // Convert scene km → GSM Earth radii (T01 expects Re)
   const [xGsm, yGsm, zGsm] = toGSM(xKm, yKm, zKm, sunLonRad);
   const xRe = xGsm / Re;
   const yRe = yGsm / Re;
   const zRe = zGsm / Re;
 
-  // T89 external field in nT (GSM frame)
-  const [bxGsm, byGsm, bzGsm] = t89(iopt, ps, xRe, yRe, zRe);
+  // T01 external field in nT (GSM frame)
+  const [bxGsm, byGsm, bzGsm] = t01(parmod, ps, xRe, yRe, zRe);
 
   // Transform back to scene Cartesian frame
   return fromGSM(bxGsm, byGsm, bzGsm, sunLonRad);
