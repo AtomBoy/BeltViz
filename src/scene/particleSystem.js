@@ -206,11 +206,11 @@ export function createParticleSystem(scene) {
     colArr[slot * 3 + 2] = col.b;
   }
 
-  // Shared helper to pick a species code from the params string.
-  function pickSpecies(species) {
-    if (species === 'electron') return ELECTRON;
-    if (species === 'proton')   return PROTON;
-    return Math.random() < 0.5 ? ELECTRON : PROTON; // 'both'
+  // Pick a species code based on which populations are enabled.
+  function pickSpecies(showElectrons, showProtons) {
+    if (showElectrons && showProtons) return Math.random() < 0.5 ? ELECTRON : PROTON;
+    if (showElectrons) return ELECTRON;
+    return PROTON; // showProtons only (caller guards against both false)
   }
 
   // ── update: called every frame ──────────────────────────────────────────────
@@ -218,7 +218,7 @@ export function createParticleSystem(scene) {
   /**
    * @param {number} dt            Real elapsed time since last frame (seconds, capped at 0.1)
    * @param {object|null} swParams Solar wind params (may be null if disabled)
-   * @param {object} pParams       params.particles { enabled, species, count, energyMeV }
+   * @param {object} pParams       params.particles { enabled, showElectrons, showProtons, count, energyMeV }
    * @param {number} [playSpeed]   Current timeline playback speed (sim-s per real-s). Default 1.
    */
   function update(dt, swParams, pParams, playSpeed = 1) {
@@ -229,10 +229,12 @@ export function createParticleSystem(scene) {
     }
     mesh.visible = true;
 
-    const dst        = swParams?.dst        ?? 0;
-    const sunLonRad  = swParams?.sunLonRad  ?? 0;
-    const species = pParams.species   ?? 'both';
-    const energy  = pParams.energyMeV ?? 1.0;
+    const dst           = swParams?.dst        ?? 0;
+    const sunLonRad     = swParams?.sunLonRad  ?? 0;
+    const showElectrons = pParams.showElectrons ?? true;
+    const showProtons   = pParams.showProtons   ?? true;
+    const canInject     = showElectrons || showProtons;
+    const energy        = pParams.energyMeV ?? 1.0;
 
     // Scale down particle count at high playback speeds to keep frame rate smooth.
     // Field line rebuilds are expensive; fewer GPU uploads help during fast playback.
@@ -247,27 +249,31 @@ export function createParticleSystem(scene) {
     // right away rather than trickling in over tens of seconds.
     if (!wasEnabled) {
       wasEnabled = true;
-      const { lMin, lMax } = injectionLRange(dst);
-      const burstTarget = Math.floor(maxCount * BURST_FRACTION);
-      while (aliveCount < burstTarget) {
-        const sp = pickSpecies(species);
-        const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-        inject(sp, E, lMin, lMax, sunLonRad);
+      if (canInject) {
+        const { lMin, lMax } = injectionLRange(dst);
+        const burstTarget = Math.floor(maxCount * BURST_FRACTION);
+        while (aliveCount < burstTarget) {
+          const sp = pickSpecies(showElectrons, showProtons);
+          const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
+          inject(sp, E, lMin, lMax, sunLonRad);
+        }
       }
       injectAccum = 0;
     }
 
     // ── Steady-state injection ─────────────────────────────────────────────
     const rate = injectionRate(dst) * BASE_INJECT_RATE;
-    injectAccum += rate * dt;
-    while (injectAccum >= 1 && aliveCount < maxCount) {
-      injectAccum -= 1;
-      const { lMin, lMax } = injectionLRange(dst);
-      const sp = pickSpecies(species);
-      const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-      inject(sp, E, lMin, lMax, sunLonRad);
+    if (canInject) {
+      injectAccum += rate * dt;
+      while (injectAccum >= 1 && aliveCount < maxCount) {
+        injectAccum -= 1;
+        const { lMin, lMax } = injectionLRange(dst);
+        const sp = pickSpecies(showElectrons, showProtons);
+        const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
+        inject(sp, E, lMin, lMax, sunLonRad);
+      }
+      if (injectAccum > rate) injectAccum = 0; // pool full — reset accumulator
     }
-    if (injectAccum > rate) injectAccum = 0; // pool full — reset accumulator
 
     // ── Drift, ageing, loss ────────────────────────────────────────────────
     // Track whether any GPU data changed this frame to avoid pointless uploads.

@@ -31,7 +31,7 @@
  *   node scripts/convert-solarwind.js 2025            # OMNI2 fallback (no G1/G2, no WGhour.d)
  *   node scripts/convert-solarwind.js 2025 /tmp/omni2_2025.dat  # explicit local OMNI2 file
  *
- * Output: public/data/solarwind-YYYY.json (version 2.0 format)
+ * Output: public/data/solarwind/YYYY-MM.json (version 2.0 format)
  *
  * Missing/fill values are preserved as null. Interpolation is handled at runtime
  * by src/physics/solarWindData.js.
@@ -445,7 +445,7 @@ async function buildFromOmni2(year, localFile) {
  * Split a year's data into 12 monthly JSON files.
  *
  * Input: the full-year data object returned by buildFromXxx().
- * Output: writes public/data/solarwind-YYYY-MM.json for each month present.
+ * Output: writes public/data/solarwind/YYYY-MM.json for each month present.
  *
  * @param {object} output - { version, sources, year, timeStep, epochs, vSw, nSw, By, Bz, Dst, G1, G2 }
  */
@@ -480,7 +480,7 @@ function writeMonthlyFiles(output) {
       G2:     idx.map(i => G2[i]),
     };
 
-    const outPath = `public/data/solarwind-${year}-${mm}.json`;
+    const outPath = `public/data/solarwind/${year}-${mm}.json`;
     const json    = JSON.stringify(monthData);
     writeFileSync(outPath, json);
     const kb = (json.length / 1024).toFixed(0);
@@ -513,21 +513,21 @@ async function main() {
   if (localFile) {
     // Explicit local file: detect format by extension
     if (isWGhourFile(localFile)) {
-      console.log(`Building solarwind-${year}-MM.json  [source: WGhour.d (${localFile})]`);
+      console.log(`Building solarwind/${year}-MM.json  [source: WGhour.d (${localFile})]`);
       output = await buildFromWGhour(year, localFile);
     } else {
-      console.log(`Building solarwind-${year}-MM.json  [source: OMNI2 (${localFile})]`);
+      console.log(`Building solarwind/${year}-MM.json  [source: OMNI2 (${localFile})]`);
       output = await buildFromOmni2(year, localFile);
     }
   } else if (existsSync(WG_DEFAULT_PATH)) {
     // Auto-use local WGhour.d when available (covers 1963–present with G1/G2)
-    console.log(`Building solarwind-${year}-MM.json  [source: WGhour.d (${WG_DEFAULT_PATH})]`);
+    console.log(`Building solarwind/${year}-MM.json  [source: WGhour.d (${WG_DEFAULT_PATH})]`);
     output = await buildFromWGhour(year, WG_DEFAULT_PATH);
   } else if (year <= QD_MAX_YEAR) {
-    console.log(`Building solarwind-${year}-MM.json  [source: Qin-Denton (ISWA)]`);
+    console.log(`Building solarwind/${year}-MM.json  [source: Qin-Denton (ISWA)]`);
     output = await buildFromQinDenton(year);
   } else {
-    console.log(`Building solarwind-${year}-MM.json  [source: OMNI2 (NASA SPDF, no G1/G2)]`);
+    console.log(`Building solarwind/${year}-MM.json  [source: OMNI2 (NASA SPDF, no G1/G2)]`);
     output = await buildFromOmni2(year, null);
   }
 

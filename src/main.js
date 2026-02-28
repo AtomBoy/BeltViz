@@ -80,10 +80,11 @@ const params = {
   datetimeString: '2026-01-01T00:00',
   // Particle system
   particles: {
-    enabled:   false,       // off by default — user opts in
-    species:   'both',      // 'electron' | 'proton' | 'both'
-    count:     800,         // max simultaneous particles
-    energyMeV: 1.0,         // representative electron energy (MeV)
+    enabled:       false,  // off by default — user opts in
+    showElectrons: true,   // show electron population (blue, eastward drift)
+    showProtons:   true,   // show proton population (orange, westward drift)
+    count:         800,    // max simultaneous particles
+    energyMeV:     1.0,   // representative electron energy (MeV)
   },
   // Aurora oval
   aurora: {
@@ -190,9 +191,69 @@ let pendingMorphDuration = 8200; // stored when rebuild is dispatched, used when
 let fieldLineWorker = null;
 let coeffs = null;
 
+// --- IGRF epoch interpolation ---
+let allIgrfData = null;  // full multi-epoch JSON loaded from igrf/igrf14-all.json
+let currentIgrfYear = null; // last interpolated year (integer)
+
+/**
+ * Linearly interpolate IGRF coefficients for the given decimal or integer year.
+ *
+ * For years within the defined epoch range (1900–2025), interpolates between
+ * the two nearest 5-year epochs.  Beyond the last epoch (2025), extrapolates
+ * using the secular variation (SV) coefficients.
+ *
+ * @param {object} allData - The igrf14-all.json payload
+ * @param {number} year    - Decimal or integer year, e.g. 2022 or 2022.5
+ * @returns {object} coeffs-compatible object { epoch, nmax, referenceRadius, g, h, sv_g, sv_h }
+ */
+function interpolateIgrfCoeffs(allData, year) {
+  const { epochs, g, h, sv_g, sv_h, svEpoch, nmax, referenceRadius } = allData;
+
+  // Beyond the last epoch: extrapolate with secular variation
+  if (year >= svEpoch) {
+    const dt = year - svEpoch;
+    const ei = epochs.length - 1;
+    return {
+      epoch: year, nmax, referenceRadius, sv_g, sv_h,
+      g: g[ei].map((row, n) => row.map((v, m) => v + dt * sv_g[n][m])),
+      h: h[ei].map((row, n) => row.map((v, m) => v + dt * sv_h[n][m])),
+    };
+  }
+
+  // Find the bracketing pair: epochs[k] <= year < epochs[k+1]
+  let k = epochs.length - 2;
+  for (let i = 0; i < epochs.length - 1; i++) {
+    if (year >= epochs[i] && year < epochs[i + 1]) { k = i; break; }
+  }
+
+  const t = (year - epochs[k]) / (epochs[k + 1] - epochs[k]);
+  return {
+    epoch: year, nmax, referenceRadius, sv_g, sv_h,
+    g: g[k].map((row, n) => row.map((v, m) => v + t * (g[k + 1][n][m] - v))),
+    h: h[k].map((row, n) => row.map((v, m) => v + t * (h[k + 1][n][m] - v))),
+  };
+}
+
+/**
+ * Re-interpolate IGRF coefficients when the simulation year changes.
+ * No-op when the year is the same as the last interpolation.
+ *
+ * @param {Date} date - Current simulation date
+ */
+function maybeUpdateIgrf(date) {
+  if (!allIgrfData) return;
+  const year = date.getUTCFullYear();
+  if (year === currentIgrfYear) return;
+  currentIgrfYear = year;
+  coeffs = interpolateIgrfCoeffs(allIgrfData, year);
+}
+
 async function loadCoefficients() {
-  const response = await fetch('./data/igrf14coeffs.json');
-  coeffs = await response.json();
+  const response = await fetch('./data/igrf/igrf14-all.json');
+  allIgrfData = await response.json();
+  const initialYear = new Date(params.datetimeString).getUTCFullYear();
+  currentIgrfYear = initialYear;
+  coeffs = interpolateIgrfCoeffs(allIgrfData, initialYear);
 }
 
 /**
@@ -845,6 +906,8 @@ function updateDatetime(isPeriodicUpdate = false) {
   const date = new Date(params.datetimeString);
   if (isNaN(date.getTime())) return;
 
+  maybeUpdateIgrf(date);
+
   const newDay = new Date(date);
   newDay.setUTCHours(0, 0, 0, 0);
   if (!dayStart || newDay.getTime() !== dayStart.getTime()) buildDayAnimation(date);
@@ -891,6 +954,7 @@ function lightUpdateDatetime(isoString) {
   if (isNaN(simTime.getTime())) return;
 
   params.datetimeString = isoString;
+  maybeUpdateIgrf(simTime);
 
   const newDay = new Date(simTime);
   newDay.setUTCHours(0, 0, 0, 0);

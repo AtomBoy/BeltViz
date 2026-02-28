@@ -1,86 +1,185 @@
-# Magnetospheric Radiometric Cybernetic Garden
-## MagRad-CG
+# MagRad-CG — Magnetospheric Radiometric Cybernetic Garden
 
-3D visualization of Earth's magnetic field lines computed from the IGRF-14 (International Geomagnetic Reference Field) spherical harmonic model.
+Interactive 3D visualization of Earth's magnetosphere: field lines, radiation belt isosurfaces, Van Allen belt particles, aurora, and historical solar wind playback. All physics runs client-side in the browser.
+
+For physics background, model descriptions, and citations see **[public/about.html](public/about.html)**.
+
+---
 
 ## Quick Start
 
 ```bash
 npm install
-node scripts/convert-igrf.js   # generate coefficient JSON from NOAA data
-npm run dev                     # open http://localhost:5173
+node scripts/convert-igrf.js          # generate public/data/igrf/igrf14-all.json (all epochs)
+node scripts/convert-solarwind.js 2025 # generate public/data/solarwind/2025-MM.json
+npm run dev                            # http://localhost:5173
+npm test             # run all 197 tests (vitest)
+npm run test:watch   # watch mode
+npm run build        # production build → dist/
 ```
 
-## What It Does
-
-BeltViz traces magnetic field lines from the IGRF-14 model and renders them on an interactive 3D globe. The IGRF model represents Earth's main magnetic field as a degree-13 spherical harmonic expansion using Gauss coefficients (g_n^m, h_n^m) published by NOAA/NCEI.
-
-Field lines are computed entirely client-side: the app evaluates the spherical harmonic potential, computes B(r,theta,phi), and traces lines via RK4 integration from seed points on Earth's surface.
-
-### Solar Wind & Magnetosphere
-
-When enabled, external solar wind effects are computed using the **Tsyganenko T89c empirical model** (Tsyganenko 1989, updated 1992). T89c is a semi-empirical model fit to satellite data that computes the complete external magnetosphere field from a single parameterized function call. It captures all major current systems simultaneously:
-
-- **Magnetotail current sheet** (warped, parabolic shape) — stretches nightside field lines into anti-parallel lobes
-- **Ring current** (symmetric + partial) — southward field in the inner magnetosphere, enhanced during storms
-- **Closure currents** — maintain divergence-free topology
-- **Chapman-Ferraro + Birkeland currents** — compress the dayside field
-
-T89c is parameterized by a single Kp index (0–6+), mapped from the solar wind inputs (speed, density, IMF Bz, Dst). The dipole tilt angle (seasonal variation) is included via the solar declination.
-
-The **Shue 1998** magnetopause model is retained as an outer boundary: T89c computes field values everywhere, and the Shue surface provides a smooth fade to zero outside the magnetopause.
-
-Storm presets range from quiet (Kp=0, standoff ~12 Re) to severe storm (Kp=6+, standoff ~6 Re). All field lines respond to solar wind conditions in real time. A semi-transparent magnetopause surface can be toggled on to show the boundary.
-
-### Controls
-
-- **IGRF Degree (1-13)**: Degree 1 shows the pure tilted dipole. Higher degrees add multipole detail — asymmetries become visible, especially in the South Atlantic region.
-- **Latitude Bands / Longitudes**: Control field line density.
-- **Line Thickness**: Adjust tube radius.
-- **Auto Rotate**: Toggle globe rotation.
-- **Solar Wind**: Enable/disable external field, select storm presets, adjust speed/density/IMF Bz/Dst/sun direction individually.
-- **Show Magnetopause**: Toggle the translucent magnetopause boundary surface.
-- Mouse drag to orbit, scroll to zoom.
+---
 
 ## Tech Stack
 
-- **Three.js** — 3D rendering (TubeGeometry for field lines, custom ShaderMaterial for atmosphere)
-- **Vite** — Dev server and bundler
-- **lil-gui** — Control panel
-- **Vitest** — Test suite
+Built using [Claude Code](https://claude.ai/code/family)
+
+| Layer | Library |
+|---|---|
+| 3D rendering | [Three.js](https://threejs.org/) — TubeGeometry, MeshPhysicalMaterial, ShaderMaterial |
+| Build / dev | [Vite](https://vitejs.dev/) |
+| Control panel | [lil-gui](https://lil-gui.georgealways.com/) |
+| Tests | [Vitest](https://vitest.dev/) |
+
+---
 
 ## Project Structure
 
 ```
 src/
-  physics/          # IGRF evaluation, Legendre polynomials, RK4 field line tracing
-  scene/            # Three.js globe, field line meshes, lighting, camera controls
-  ui/               # GUI control panel and info overlay
-  utils/            # Constants and color mapping
+  physics/
+    igrf.js                # IGRF-14 spherical harmonic evaluation (computeB, computeBMagnitude)
+    legendre.js            # Schmidt semi-normalised associated Legendre polynomials
+    fieldLineTracer.js     # RK4 field-line integration; generateSeedPoints()
+    fieldLineWorker.js     # Web Worker wrapper — runs traceFieldLine() off the main thread
+    scalarFieldWorker.js   # Web Worker — |B| and L-shell 3D grids (64³ default); marching cubes input
+    marchingCubes.js       # Marching cubes isosurface extraction from Float32Array grids
+    t01.js                 # Tsyganenko T01 (2002) external field — ring current, tail, Birkeland currents
+    t89.js                 # Tsyganenko T89c (legacy, kept for reference)
+    solarWind.js           # computeExternalB(), insideMagnetopause() (Shue 1998), GSM transforms
+    totalField.js          # computeTotalB() — IGRF + T01 + magnetopause fade
+    coordinates.js         # Spherical ↔ Cartesian transforms, B-vector rotation
+    magneticEnvironment.js # L-shell, belt region, SAA proximity at any point
+    satellitePosition.js   # Geographic lat/lon/alt → physics Cartesian
+    particleDrift.js       # Drift period (Schulz & Lanzerotti 1974), loss cone, injection rate
+  scene/
+    fieldLines.js          # buildFieldLineGroup() — TubeGeometry + CatmullRomCurve3
+    isosurfaces.js         # buildIsosurfaceGroup() — |B| and L-shell transparent meshes
+    radiationBelts.js      # buildRadiationBeltGroup() — inner/outer belt boundary meshes
+    magnetopauseMesh.js    # Shue magnetopause parametric surface (lazy-imported)
+    particleSystem.js      # Van Allen belt particles — THREE.Points, drift animation, storm injection
+    auroraRenderer.js      # Aurora oval — torus at 67° lat, curtain ShaderMaterial, Dst-driven opacity
+    satelliteMarker.js     # Satellite probe sphere
+    controls.js            # OrbitControls setup
+    clippingPlanes.js      # Equatorial / meridional clip planes
+  ui/
+    controlPanel.js        # lil-gui panel, all parameter callbacks
+    timeline.js            # Scrub bar: play/pause, 1×/60×/3600×/86400×, 8 s rebuild throttle
+    infoOverlay.js         # Top-left info overlay
+    environmentReadout.js  # Satellite environment readout (|B|, L-shell, region)
+  utils/
+    constants.js           # KM_TO_SCENE, EARTH_RADIUS_KM, LATITUDE_SETS, etc.
+    colors.js              # latitudeToColor() — field line hue by latitude
+  main.js                  # Entry point: init, render loop, rebuild orchestration
+
 scripts/
-  convert-igrf.js   # Converts NOAA coefficient text files to JSON (supports any epoch 1900-2025)
-  igrf14coeffs.txt  # Source IGRF-14 coefficients from NOAA
-tests/              # Vitest suite: coordinates, Legendre, IGRF field values, field line tracing
+  convert-igrf.js          # NOAA igrf14coeffs.txt → public/data/igrf14coeffs.json
+  convert-solarwind.js     # WGhour.d / OMNI2 → public/data/solarwind-YYYY.json
+
+tests/                     # Vitest unit tests (197 tests, 13 files)
+
 public/
-  data/             # Generated igrf14coeffs.json
-  textures/         # Earth day map texture
+  about.html               # User-facing physics reference (models, citations, how-to)
+  data/
+    igrf/
+      igrf14-all.json      # Generated — IGRF-14 Gauss coefficients, all epochs 1900–2025
+    WGhour.d               # Source solar wind data (Qin-Denton, not committed — large)
+    solarwind/
+      YYYY-MM.json         # Generated — monthly solar wind per year
+  textures/                # Earth day map (NASA Blue Marble)
 ```
 
-## Data Sources & References
+---
 
-- **IGRF-14 coefficients**: [NOAA NCEI](https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field) / [IAGA V-MOD](https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
-- **Earth texture**: NASA Blue Marble
-- **T89c external field model**: Tsyganenko N.A., "A magnetospheric magnetic field model with a warped tail current sheet", *Planet. Space Sci.*, v.37, pp.5–20, 1989. Updated 1992 with tilt-angle-dependent tail terms.
-- **T89c JavaScript implementation**: Ported from the Python [geopack](https://github.com/tsssss/geopack) library by Sheng Tian, which is itself a port of Tsyganenko's original Fortran code.
-- **Magnetopause model**: Shue et al. 1998, "Magnetopause location under extreme solar wind conditions", *JGR* 103(A8):17691-17700 ([doi:10.1029/98JA01103](https://doi.org/10.1029/98JA01103))
-- **Magnetopause shape**: Shue et al. 1997, "A new functional form to study the solar wind control of the magnetopause size and shape", *JGR* 102(A5):9497-9511 ([doi:10.1029/97JA00196](https://doi.org/10.1029/97JA00196))
+## Architecture Notes
 
-## Roadmap
+See [CLAUDE.md](CLAUDE.md) for the full architecture reference used during development, including coordinate conventions, physics numerical details, and the rebuild pipeline.
 
-- [x] IGRF-14 magnetic field lines (Phase 1)
-- [x] L-shell/|B| isosurfaces, radiation belts, clipping planes, satellite probe (Phase 2)
-- [x] Solar wind interaction — T89c empirical external field, Shue magnetopause (Phase 3)
-- [X] Tsyganenko T96/T01 model for multi-parameter storm driving (requires 6 SW inputs vs T89c's single Kp)
-- [ ] Van Allen radiation belt particle visualization
-- [ ] Satellite orbit display (SGP4/TLE)
-- [ ] Time-varying field animation using secular variation coefficients
+### Two coordinate systems
+
+- **Physics (km)**: used by everything in `src/physics/`. Earth radius = 6371.2 km. Spherical colatitude θ (0 at north pole).
+- **Scene (unitless)**: used by `src/scene/`. Earth is a unit sphere. `scene = km / KM_TO_SCENE`.
+
+### Computation pipeline
+
+```
+igrf/igrf14-all.json  (26 epochs, 1900–2025, interpolated at runtime)
+      │  interpolateIgrfCoeffs(year)
+      ▼
+  computeB()               ← IGRF-14 spherical harmonics   (src/physics/igrf.js)
+      +
+  computeExternalB()       ← T01 empirical model            (src/physics/solarWind.js)
+      │
+      ▼
+  computeTotalB()          ← combined + magnetopause fade   (src/physics/totalField.js)
+      │
+      ├─▶ fieldLineWorker  ── RK4 trace ──▶ TubeGeometry    (Web Worker)
+      │
+      └─▶ scalarFieldWorker ─ 64³ grid ──▶ marchingCubes()
+                │                              │
+                ├─▶ |B| isosurfaces            │
+                └─▶ L-shell isosurfaces ───────┴──▶ radiation belt meshes
+```
+
+Both heavy computations (field-line tracing and scalar-field grids) run in **Web Workers** so the render loop never blocks. Field-line rebuilds use a `buildId` stale-guard so only the latest request's result is applied.
+
+### Solar wind data pipeline
+
+Solar wind conversion auto-detects `public/data/WGhour.d` (Qin-Denton format, 1963–present).
+Without it the script falls back to ISWA Qin-Denton (≤2019) or NASA OMNI2 (any year, no G1/G2).
+
+```
+WGhour.d  (or OMNI2 / ISWA fallback)
+    │
+    ▼  scripts/convert-solarwind.js
+    │
+    ▼
+solarwind/YYYY-MM.json   (columnar, version 2.0)
+    │  { timestamps[], vSw[], nSw[], By[], Bz[], Dst[], G1[], G2[] }
+    │
+    ▼  applyDataSolarWind()  (main.js)
+    │  lazy-loads current month + neighbours; linear interpolation between hours
+    │
+    ▼
+getSolarWindParams()   →  T01 parmod + Shue magnetopause
+```
+
+### Rebuild triggers
+
+| User action | Triggers |
+|---|---|
+| Solar wind param change | field lines, isosurfaces, belts, satellite, magnetopause |
+| Timeline drag / pause | field lines (+ isosurfaces / belts if enabled) |
+| Timeline play (every 8 s) | field lines only (long morph, no loading indicator) |
+| IGRF degree / resolution change | field lines + isosurfaces + belts |
+| Visual-only change (opacity, visibility) | geometry reuse, no recompute |
+
+---
+
+## Data Scripts
+
+### IGRF coefficients
+
+```bash
+node scripts/convert-igrf.js                              # all epochs → public/data/igrf/igrf14-all.json
+node scripts/convert-igrf.js scripts/igrf14coeffs.txt 2000.0  # single-epoch legacy file
+```
+
+Output: `public/data/igrf/igrf14-all.json` — all 26 IGRF-14 epochs (1900–2025) in one file.
+At runtime the app interpolates coefficients for the current simulation year automatically.
+
+### Solar wind data
+
+```bash
+node scripts/convert-solarwind.js 2025          # auto-detects WGhour.d
+node scripts/convert-solarwind.js 2025 /path/to/WGhour.d   # explicit path
+node scripts/convert-solarwind.js 2025 /path/to/omni2.dat  # OMNI2 fallback (no G1/G2)
+```
+
+Output: `public/data/solarwind/YYYY-MM.json`. The app lazy-loads per month at runtime.
+
+---
+
+## TODOs
+
+- [ ] Satellite orbit display (SGP4/TLE) — source data in `public/data/Space-Track.all.3le.txt`

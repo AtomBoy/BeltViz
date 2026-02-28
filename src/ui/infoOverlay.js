@@ -5,16 +5,8 @@ export function createInfoOverlay() {
   const div = document.createElement('div');
   div.id = 'info-overlay';
   div.innerHTML = `
-    <h3>MagRad-CG</h3>
+    <h3>MagRad-CG  by <a href="https://www.atomodo.com/">AtOmOdO</a></h3>
     <p><strong>Magnetospheric Radiometric Cybernetic Garden</strong></p>
-    <p><a href="https://www.atomodo.com/">AtOmOdO</a></p>
-    <p>Computed from the IGRF-14 spherical harmonic model
-    using Gauss coefficients up to degree 13.</p>
-    <p class="attribution">
-      Data: <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">NOAA NCEI IGRF-14</a><br>
-      Texture: NASA Blue Marble
-    </p>
-    <p id="sw-data-note" class="attribution"></p>
     <p class="attribution"><a href="/about.html" target="_blank">About &amp; Data Sources</a></p>
   `;
   document.body.appendChild(div);
@@ -28,7 +20,7 @@ export function createInfoOverlay() {
       left: 20px;
       background: rgba(0, 5, 20, 0.75);
       color: #c8ddf0;
-      padding: 16px 20px;
+      padding: 12px 15px;
       border-radius: 16px;
       font-family: 'Helvetica Neue', Arial, sans-serif;
       font-size: 13px;

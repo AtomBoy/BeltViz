@@ -15,3 +15,11 @@ Moved here to save space in CLAUDE.md
 
 - [X] Animation over time. **Implemented via timeline bar (`src/ui/timeline.js`): play/pause, 1×/60×/3600×/86400× speed, day navigation, scrubbing. Sun/moon use Three.js AnimationMixer with pre-computed keyframes (5-min intervals, 289 per day). Field lines rebuild every 2s during playback. See `ANIMATION.md`.**
 - [X] Solar wind driven by actual historical data. Hourly resoloution is probably a good start. See [https://www.ncei.noaa.gov/cloud-access/space-weather-portal/overview?sat=DSCOVR] for likely data source.
+
+- [x] IGRF-14 magnetic field lines (Phase 1)
+- [x] L-shell/|B| isosurfaces, radiation belts, clipping planes, satellite probe (Phase 2)
+- [x] Solar wind interaction — T89c empirical external field, Shue magnetopause (Phase 3)
+- [X] Tsyganenko T96/T01 model for multi-parameter storm driving (requires 6 SW inputs vs T89c's single Kp)
+- [X] Van Allen radiation belt particle visualization
+- [X] Load IGRF coefficients for the correct epoch matching the simulation date
+- [X] Move solar wind data files to `public/data/solarwind/`

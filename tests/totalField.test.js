@@ -6,7 +6,10 @@ import { computeB, computeBMagnitude } from '../src/physics/igrf.js';
 const EARTH_RADIUS_KM = 6371.2;
 const Re = EARTH_RADIUS_KM;
 
-const coeffs = JSON.parse(readFileSync('public/data/igrf14coeffs.json', 'utf-8'));
+const allData = JSON.parse(readFileSync('public/data/igrf/igrf14-all.json', 'utf-8'));
+const ei = allData.epochs.length - 1; // latest epoch (2025)
+const coeffs = { nmax: allData.nmax, referenceRadius: allData.referenceRadius,
+                 g: allData.g[ei], h: allData.h[ei] };
 
 const quietParams = {
   vSw: 400, nSw: 5, imfBz: 0, dst: 0, sunLonRad: 0, enabled: true,

@@ -157,11 +157,14 @@ export function createControlPanel(params, callbacks) {
   // --- Particles folder ---
   const particleFolder = gui.addFolder('Belt Particles');
   particleFolder.add(params.particles, 'enabled').name('Show Particles');
-  particleFolder.add(params.particles, 'species', {
-    'Electrons (eastward)': 'electron',
-    'Protons (westward)':   'proton',
-    'Both':                 'both',
-  }).name('Species');
+
+  // Species checkboxes — labels double as a color legend.
+  // $name is the lil-gui label <span>; setting innerHTML lets us add a colored dot.
+  const cElec = particleFolder.add(params.particles, 'showElectrons').name('Electrons (eastward)');
+  cElec.$name.innerHTML = '<span style="color:#3399ff">●</span> Electrons (eastward)';
+  const cProt = particleFolder.add(params.particles, 'showProtons').name('Protons (westward)');
+  cProt.$name.innerHTML = '<span style="color:#ff6622">●</span> Protons (westward)';
+
   particleFolder.add(params.particles, 'count', 200, 2000, 100).name('Max Particles');
   particleFolder.add(params.particles, 'energyMeV', {
     '< 1 MeV (low)':    0.3,

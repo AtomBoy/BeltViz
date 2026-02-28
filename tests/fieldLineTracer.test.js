@@ -15,7 +15,10 @@ const EARTH_R = 6371.2;
 let coeffs;
 
 beforeAll(() => {
-  coeffs = JSON.parse(readFileSync('public/data/igrf14coeffs.json', 'utf-8'));
+  const allData = JSON.parse(readFileSync('public/data/igrf/igrf14-all.json', 'utf-8'));
+  const ei = allData.epochs.length - 1; // latest epoch (2025)
+  coeffs = { nmax: allData.nmax, referenceRadius: allData.referenceRadius,
+             g: allData.g[ei], h: allData.h[ei] };
 });
 
 describe('generateSeedPoints', () => {
