@@ -18,6 +18,7 @@
 import { computeB, computeBMagnitude } from './igrf.js';
 import { computeTotalB, computeTotalBMagnitude } from './totalField.js';
 import { cartesianToSpherical } from './coordinates.js';
+import { insideMagnetopause } from './solarWind.js';
 import { EARTH_RADIUS_KM, KM_TO_SCENE } from '../utils/constants.js';
 
 self.onmessage = function (e) {
@@ -104,10 +105,21 @@ function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, 
         const sy = boundsMin[1] + iy * stepY;
         const sz = boundsMin[2] + iz * stepZ;
 
-        const [r, theta, phi] = sceneToSpherical(sx, sy, sz);
+        // Compute km Cartesian coords (needed for magnetopause masking)
+        const xKm = sx / KM_TO_SCENE;
+        const yKm = sy / KM_TO_SCENE;
+        const zKm = sz / KM_TO_SCENE;
+        const [r, theta, phi] = cartesianToSpherical(xKm, yKm, zKm);
         const idx = ix * res * res + iy * res + iz;
 
         if (r < EARTH_RADIUS_KM * 0.99) {
+          grid[idx] = Infinity;
+          continue;
+        }
+
+        // Outside the magnetopause: L-shell is undefined; exclude from isosurface.
+        // Under severe storms this is physically real (magnetopause shadowing at L > 5–6).
+        if (useSolarWind && insideMagnetopause(xKm, yKm, zKm, solarWindParams) < 0.5) {
           grid[idx] = Infinity;
           continue;
         }
@@ -119,12 +131,16 @@ function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, 
         const Bperp = Math.sqrt(Bt * Bt + Bp * Bp);
 
         if (Bperp < 1e-10) {
-          // Near poles: L approaches r/Re
-          grid[idx] = r / EARTH_RADIUS_KM;
+          // Pure IGRF: near poles, L ≈ r/Re is a reasonable approximation.
+          // Solar wind: near-zero Bperp inside the magnetosphere indicates a field anomaly; exclude.
+          grid[idx] = useSolarWind ? Infinity : r / EARTH_RADIUS_KM;
         } else {
           const tanLambda = Math.abs(Br) / (2 * Bperp);
           const cosLambda2 = 1 / (1 + tanLambda * tanLambda);
-          grid[idx] = (r / EARTH_RADIUS_KM) / cosLambda2;
+          const L = (r / EARTH_RADIUS_KM) / cosLambda2;
+          // In the magnetotail, the dipole L formula yields unreliable values above L≈11.
+          // Cap these cells so the marching cubes surface doesn't extend into the far tail.
+          grid[idx] = (useSolarWind && L > 11) ? Infinity : L;
         }
       }
     }

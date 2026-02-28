@@ -242,9 +242,14 @@ function onFieldLineWorkerMessage(e) {
  * Returns immediately — the render loop is never blocked.
  * The worker replies via onFieldLineWorkerMessage when tracing is complete.
  */
-function rebuildFieldLines(morphDuration = 8200) {
+function rebuildFieldLines(morphDuration = 8200, showIndicator = true) {
   const buildId = ++fieldLineBuildId;
   pendingMorphDuration = morphDuration;
+
+  if (showIndicator) {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.display = '';
+  }
 
   // Snapshot solar wind params so all seeds use a consistent sun position
   // (params.sunLongitude changes every frame during playback).
@@ -367,6 +372,7 @@ let cachedBGridResolution = null;
 let cachedLShellGrid = null;
 let cachedLShellMaxDegree = null;
 let cachedLShellResolution = null;
+let cachedLShellSolarWindEnabled = false;
 let isosurfaceGroup = null;
 
 // --- Radiation belt state ---
@@ -547,7 +553,14 @@ function rebuildRadiationBelts() {
   const res = Number(params.isoResolution);
   const degree = params.maxDegree;
 
-  if (cachedLShellGrid && cachedLShellMaxDegree === degree && cachedLShellResolution === res) {
+  // Cache is only valid for pure-IGRF. Solar wind grids must recompute on every call
+  // because L-shell geometry changes with real-time solar wind conditions.
+  const swActive = params.solarWindEnabled;
+  if (!swActive
+      && cachedLShellGrid
+      && cachedLShellMaxDegree === degree
+      && cachedLShellResolution === res
+      && !cachedLShellSolarWindEnabled) {
     extractAndRenderBelts();
     return;
   }
@@ -563,12 +576,12 @@ function rebuildRadiationBelts() {
       cachedLShellGrid = e.data.grid;
       cachedLShellMaxDegree = degree;
       cachedLShellResolution = e.data.resolution;
+      cachedLShellSolarWindEnabled = params.solarWindEnabled;
       showIsoLoading(false);
       extractAndRenderBelts();
     }
   };
 
-  // Pure IGRF for L-shell grids — see comment in rebuildIsosurfaces().
   worker.postMessage({
     type: 'computeLShellGrid',
     coeffs,
@@ -576,6 +589,7 @@ function rebuildRadiationBelts() {
     resolution: res,
     boundsMin: GRID_BOUNDS_MIN,
     boundsMax: GRID_BOUNDS_MAX,
+    solarWindParams: swActive ? getSolarWindParams() : undefined,
   });
 }
 
@@ -837,7 +851,7 @@ function updateDatetime(isPeriodicUpdate = false) {
   applySunMoonAnimation(date);
 
   if (params.solarWindEnabled) {
-    rebuildFieldLines(isPeriodicUpdate ? 8200 : 1000);
+    rebuildFieldLines(isPeriodicUpdate ? 8200 : 1000, !isPeriodicUpdate);
     if (params.showIsosurfaces) rebuildIsosurfaces();
     if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
     if (params.showSatellite) updateSatelliteProbe();

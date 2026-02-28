@@ -174,6 +174,244 @@
     down with external fields in the tail and at the magnetopause.
   </div>
 
+  <!-- ═══ MAGNETOSPHERE AND SOLAR WEATHER ═══ -->
+  <h2>The Magnetosphere and Solar Weather</h2>
+
+  <h3>Earth's magnetic shield</h3>
+  <p>
+    Earth's magnetic field is confined into a teardrop-shaped cavity — the
+    <strong>magnetosphere</strong> — by the continuous outflow of magnetized plasma from
+    the Sun known as the <strong>solar wind</strong>. Blowing at 300–800&nbsp;km/s, the
+    solar wind carries its own embedded magnetic field, the
+    <strong>interplanetary magnetic field (IMF)</strong>.
+    Where the solar wind first encounters Earth's field, a standing shock wave called the
+    <strong>bow shock</strong> forms at roughly 13–15&nbsp;R<sub>E</sub> on the dayside.
+    The boundary where Earth's magnetic pressure balances the solar wind ram pressure is
+    the <strong>magnetopause</strong>, located at roughly 10–11&nbsp;R<sub>E</sub> under
+    quiet conditions.
+    On the nightside the field cannot balance the dynamic pressure, and is dragged out
+    hundreds of R<sub>E</sub> downstream into the long <strong>magnetotail</strong>, with
+    two lobes of nearly antiparallel field separated by a thin current sheet.
+  </p>
+  <p>
+    This asymmetry is visible in the field line tubes in this visualization: dayside lines
+    are short and tightly arched; nightside lines are drawn far into the tail. The magnetopause
+    shape itself can be displayed via <em>Solar Wind → Show Magnetopause</em>.
+  </p>
+
+  <h3>The key driver: IMF B<sub>z</sub></h3>
+  <p>
+    The most important parameter governing how strongly the solar wind couples to Earth
+    is the <strong>north-south component of the IMF (B<sub>z</sub>)</strong>.
+    When B<sub>z</sub> is northward — parallel to Earth's dayside field — coupling is weak
+    and the magnetosphere is relatively closed.
+    When B<sub>z</sub> turns southward, the antiparallel field geometry at the magnetopause
+    nose enables <strong>magnetic reconnection</strong>: field lines break and re-connect
+    across the boundary, opening a direct channel for solar wind plasma and energy to flow
+    into the magnetosphere.
+    Sustained southward B<sub>z</sub> is the single greatest predictor of geomagnetic
+    storm severity, and is the primary input that drives ring current inflation as measured
+    by the Dst index.
+  </p>
+
+  <h3>Field lines versus L-shell surfaces</h3>
+  <p>Two distinct representations appear in this visualization, answering different questions:</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">①</div>
+      <div class="step-body">
+        <strong>Field line tubes</strong> (<em>Show Field Lines</em> in the control panel)
+        trace the actual path of the magnetic field vector <strong>B</strong>(r), computed by
+        fourth-order Runge–Kutta integration of the combined IGRF-14&nbsp;+&nbsp;T01 field.
+        They show the <em>magnetic highways</em> along which particles gyrate and bounce.
+        With solar wind enabled the tubes are visibly asymmetric: compressed and arched on
+        the dayside, stretched into the nightside tail. The shape responds in real time to
+        the solar wind sliders and to historical data during playback.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">②</div>
+      <div class="step-body">
+        <strong>L-shell surfaces</strong> (the solid radiation-belt shells and the transparent
+        isosurfaces under <em>Isosurfaces → L-shell field topology</em>) show surfaces of
+        constant <strong>McIlwain L</strong> — a parameter that approximates the equatorial
+        distance (in R<sub>E</sub>) at which the local field line would cross the equatorial
+        plane in a dipole field. These surfaces represent <em>drift shells</em>: a trapped
+        particle does not stay on a single field line but drifts azimuthally around Earth,
+        sweeping through a full ring of field lines. L tells you which drift orbit the
+        particle occupies, not which field line it sits on. In a pure dipole these shells
+        are perfect tori; with T01 enabled they distort, and during severe storms the
+        outer boundary can be clipped by the magnetopause.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Limitation of the L approximation.</strong>
+    McIlwain L is derived from the local field direction using the dipole formula
+    L&nbsp;=&nbsp;r&nbsp;/&nbsp;(R<sub>E</sub>&nbsp;cos²λ<sub>m</sub>).
+    It is a good approximation in the inner magnetosphere (L&nbsp;&lt;&nbsp;4) but degrades
+    in the distorted outer belt and magnetotail where the field topology departs strongly
+    from a dipole. The rigorous equivalent, <em>Roederer L*</em>, requires tracing the full
+    drift orbit in the 3D field — computationally expensive and outside the scope of this
+    real-time app (Roederer &amp; Lejosne 2018).
+  </div>
+
+  <h3>How solar weather reshapes the radiation belts</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Condition</th>
+        <th>Magnetopause&nbsp;(R<sub>E</sub>)</th>
+        <th>Outer belt geometry</th>
+        <th>Belt population</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Quiet</strong><br><small>Dst&nbsp;≈&nbsp;0, B<sub>z</sub>&nbsp;≈&nbsp;0</small></td>
+        <td>~10–11</td>
+        <td>Near-symmetric torus</td>
+        <td>Slowly replenished by substorm activity and chorus wave acceleration</td>
+      </tr>
+      <tr>
+        <td><strong>Moderate storm</strong><br><small>Dst −30 to −100&nbsp;nT</small></td>
+        <td>7–8</td>
+        <td>Slightly compressed dayside; ring current belt enhanced</td>
+        <td>Plasma-sheet injection intensifies; outer belt fills; aurora oval brightens and expands equatorward</td>
+      </tr>
+      <tr>
+        <td><strong>Severe storm</strong><br><small>Dst&nbsp;&lt;&nbsp;−100&nbsp;nT</small></td>
+        <td>5–7</td>
+        <td>Outer edge (L&nbsp;≈&nbsp;6) may intersect the magnetopause</td>
+        <td><strong>Magnetopause shadowing</strong>: outermost electrons escape in hours; deep injection from nightside fills the inner region; inner belt (L&nbsp;&lt;&nbsp;2) remains essentially unchanged</td>
+      </tr>
+      <tr>
+        <td><strong>Recovery</strong><br><small>hours–days after</small></td>
+        <td>Expanding to ~10</td>
+        <td>Gradually returns to torus</td>
+        <td>Chorus waves re-accelerate surviving electrons; hiss waves slowly drain the slot region between the belts</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Magnetopause shadowing</h3>
+  <p>
+    When the compressed magnetopause crosses inside the outermost drift shells, electrons
+    on those shells encounter the boundary on every azimuthal drift pass and escape into
+    the solar wind. This process — <strong>magnetopause shadowing</strong> — can deplete
+    electrons at L&nbsp;&gt;&nbsp;5–6 by 60–99% within a few hours of storm onset
+    (Herrera et al. 2016; Staples et al. 2022).
+    In this visualization, with the Severe Storm solar wind preset enabled, the outer
+    belt L-shell surface is cut open on the dayside, leaving an incomplete torus: the
+    open region represents drift shells that particles cannot maintain without crossing the
+    magnetopause and being lost. The belt recovers when the solar wind pressure relents
+    and new particles are injected on the nightside.
+  </p>
+  <p>
+    Whether a given storm ultimately <em>enhances</em> or <em>depletes</em> the outer
+    belt depends on which process dominates — injection and wave acceleration, or
+    loss to the magnetopause and atmosphere. This stochastic competition is an active
+    area of research and explains why no two geomagnetic storms produce the same
+    radiation belt outcome.
+  </p>
+
+  <h3>Solar wind and magnetosphere — references</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Observation of high-intensity radiation by satellites 1958&nbsp;Alpha and Gamma
+      </div>
+      <div class="cite-authors">
+        Van Allen, J.A., Ludwig, G.H., Ray, E.C., &amp; McIlwain, C.E. (1958).
+        <em>Jet Propulsion</em>, 28, 588–592.
+      </div>
+      <div class="cite-note">
+        Discovery of the inner radiation belt from Explorer&nbsp;1 and Explorer&nbsp;3 data.
+        The outer belt was confirmed shortly after by Pioneer&nbsp;3.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Interplanetary field and geomagnetic storms
+      </div>
+      <div class="cite-authors">
+        Dungey, J.W. (1961). <em>Physical Review Letters</em>, 6, 47–48.
+        <a href="https://doi.org/10.1103/PhysRevLett.6.47" target="_blank">doi:10.1103/PhysRevLett.6.47</a>
+      </div>
+      <div class="cite-note">
+        Predicted that southward IMF enables dayside magnetic reconnection — the fundamental
+        mechanism by which solar wind energy enters the magnetosphere and drives storms.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        The Van Allen Probes mission
+      </div>
+      <div class="cite-authors">
+        Mauk, B.H., Fox, N.J., Kanekal, S.G., Kersten, K., Sibeck, D.G., &amp; Ukhorskiy, A. (2013).
+        <em>Space Science Reviews</em>, 179, 3–27.
+        <a href="https://doi.org/10.1007/s11214-012-9908-y" target="_blank">doi:10.1007/s11214-012-9908-y</a>
+      </div>
+      <div class="cite-note">
+        Overview of the RBSP/Van Allen Probes mission (2012–2019) that transformed
+        understanding of outer belt dynamics: storm-time injection, magnetopause loss,
+        wave-particle acceleration, and the slot region between the two belts.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Coordinates for representing radiation belt particle flux
+      </div>
+      <div class="cite-authors">
+        Roederer, J.G., &amp; Lejosne, S. (2018).
+        <em>Journal of Geophysical Research: Space Physics</em>, 123, 1381–1387.
+        <a href="https://doi.org/10.1002/2017JA025053" target="_blank">doi:10.1002/2017JA025053</a>
+      </div>
+      <div class="cite-note">
+        Clarifies the distinction between McIlwain L (local dipole approximation) and
+        Roederer L* (full drift-shell tracing); the source of the coordinate limitation
+        noted in this app's L-shell surfaces.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Characterizing magnetopause shadowing effects in the outer electron radiation belt
+        during geomagnetic storms
+      </div>
+      <div class="cite-authors">
+        Herrera, D., Maget, V.F., &amp; Sicard-Piet, A. (2016).
+        <em>Journal of Geophysical Research: Space Physics</em>, 121, 9517–9530.
+        <a href="https://doi.org/10.1002/2016JA022825" target="_blank">doi:10.1002/2016JA022825</a>
+      </div>
+      <div class="cite-note">
+        Quantifies magnetopause shadowing as a dominant storm-time loss mechanism for the
+        outer belt; source for the 60–99% depletion figures cited in this app.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Resolving magnetopause shadowing using multimission measurements of phase space density
+      </div>
+      <div class="cite-authors">
+        Staples, F.A., Rae, I.J., Forsyth, C., Martin, C.J., &amp; DeWit, J. (2022).
+        <em>Journal of Geophysical Research: Space Physics</em>, 127, e2021JA029298.
+        <a href="https://doi.org/10.1029/2021JA029298" target="_blank">doi:10.1029/2021JA029298</a>
+      </div>
+      <div class="cite-note">
+        Multi-spacecraft confirmation of rapid magnetopause shadowing losses; independent
+        verification of the Herrera et al. loss-rate estimates.
+      </div>
+    </div>
+
+  </div>
+
   <!-- ═══ RADIATION BELT PARTICLES ═══ -->
   <h2>Radiation Belt Particle Physics</h2>
 
