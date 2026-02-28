@@ -160,7 +160,7 @@ export function createParticleSystem(scene) {
 
   // ── inject: place one new particle ─────────────────────────────────────────
 
-  function inject(speciesCode, energyMeV, lMin, lMax) {
+  function inject(speciesCode, energyMeV, lMin, lMax, sunLonRad = 0) {
     // Find a dead slot, starting from where we left off.
     let slot = -1;
     for (let i = 0; i < MAX_PARTICLES; i++) {
@@ -172,8 +172,10 @@ export function createParticleSystem(scene) {
     const L = lMin + Math.random() * (lMax - lMin);
     // Inject from the nightside (midnight sector ± 90°).
     // Real storm injection occurs when magnetotail plasma-sheet particles are
-    // driven inward on the nightside — centred on phi = π (anti-sunward).
-    const phi = Math.PI + (Math.random() - 0.5) * Math.PI;
+    // driven inward on the nightside — centred on the anti-solar direction.
+    // phi=0 is subsolar; sun sits at phi_sun = -sunLonRad, so nightside = π - sunLonRad.
+    const nightsidePhi = Math.PI - sunLonRad;
+    const phi = nightsidePhi + (Math.random() - 0.5) * Math.PI;
     // Spread bounce latitude along field line, mostly near equator.
     // Mirror latitude (dipole) ≈ arccos(1/√L).
     const maxLambda = Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.65;
@@ -227,7 +229,8 @@ export function createParticleSystem(scene) {
     }
     mesh.visible = true;
 
-    const dst     = swParams?.dst ?? 0;
+    const dst        = swParams?.dst        ?? 0;
+    const sunLonRad  = swParams?.sunLonRad  ?? 0;
     const species = pParams.species   ?? 'both';
     const energy  = pParams.energyMeV ?? 1.0;
 
@@ -249,7 +252,7 @@ export function createParticleSystem(scene) {
       while (aliveCount < burstTarget) {
         const sp = pickSpecies(species);
         const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-        inject(sp, E, lMin, lMax);
+        inject(sp, E, lMin, lMax, sunLonRad);
       }
       injectAccum = 0;
     }
@@ -262,7 +265,7 @@ export function createParticleSystem(scene) {
       const { lMin, lMax } = injectionLRange(dst);
       const sp = pickSpecies(species);
       const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-      inject(sp, E, lMin, lMax);
+      inject(sp, E, lMin, lMax, sunLonRad);
     }
     if (injectAccum > rate) injectAccum = 0; // pool full — reset accumulator
 

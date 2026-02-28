@@ -4,7 +4,8 @@ import { solarPosition, lunarPosition } from './utils/astronomy.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
 import { buildFieldLineGroup, createFieldLineMesh, TUBE_SEGMENTS } from './scene/fieldLines.js';
-import { traceFieldLine, generateSeedPoints } from './physics/fieldLineTracer.js';
+// fieldLineTracer — generateSeedPoints and traceFieldLine are now called
+// inside src/physics/fieldLineWorker.js (off the main thread).
 import { latitudeToColor } from './utils/colors.js';
 import { createControlPanel } from './ui/controlPanel.js';
 import { createInfoOverlay } from './ui/infoOverlay.js';
@@ -184,7 +185,9 @@ scene.add(satellite.mesh);
 
 // --- Field lines ---
 let fieldLineGroup = null;
-let fieldLineBuildId = 0; // generation counter to cancel stale async builds
+let fieldLineBuildId = 0;      // generation counter — stale worker responses are ignored
+let pendingMorphDuration = 8200; // stored when rebuild is dispatched, used when reply arrives
+let fieldLineWorker = null;
 let coeffs = null;
 
 async function loadCoefficients() {
@@ -193,46 +196,31 @@ async function loadCoefficients() {
 }
 
 /**
- * Trace field lines and build the mesh group.
+ * Create (or reuse) the field line Web Worker.
+ * The worker runs all RK4 tracing on a separate thread so the render loop
+ * never stalls during rebuilds.
  */
-async function rebuildFieldLines(morphDuration = 8200) {
-  const buildId = ++fieldLineBuildId;
-
-  // Snapshot solar wind params once before the trace loop so all seeds use a
-  // consistent sun position (params.sunLongitude changes every frame during playback).
-  const swParams = getSolarWindParams();
-
-  const latitudes = LATITUDE_SETS[params.numLatitudes - 1];
-  const swActive = params.solarWindEnabled;
-  const seeds = generateSeedPoints({
-    latitudes,
-    nLongitudes: params.numLongitudes,
-    bothHemispheres: swActive,
-    polarCapLatitudes: swActive ? [85, 88] : [],
-  });
-
-  const tracedLines = [];
-  for (let i = 0; i < seeds.length; i++) {
-    const seed = seeds[i];
-    const points = traceFieldLine(seed.x, seed.y, seed.z, coeffs, {
-      maxDegree: params.maxDegree,
-      solarWindParams: swParams,
-    });
-    tracedLines.push({ points, lat: seed.lat, lon: seed.lon });
-
-    if (i % 4 === 3) {
-      await new Promise((r) => setTimeout(r, 0));
-      // If a newer rebuild started while we yielded, abort this one
-      if (buildId !== fieldLineBuildId) return;
-    }
+function getOrCreateFieldLineWorker() {
+  if (!fieldLineWorker) {
+    fieldLineWorker = new Worker(
+      new URL('./physics/fieldLineWorker.js', import.meta.url),
+      { type: 'module' }
+    );
+    fieldLineWorker.onmessage = onFieldLineWorkerMessage;
   }
+  return fieldLineWorker;
+}
 
-  // Final check before modifying scene
-  if (buildId !== fieldLineBuildId) return;
+/**
+ * Receive traced point arrays from the worker and build Three.js geometry.
+ * Stale responses (buildId behind current counter) are silently discarded.
+ */
+function onFieldLineWorkerMessage(e) {
+  const { type, buildId, tracedLines } = e.data;
+  if (type !== 'fieldLinesReady') return;
+  if (buildId !== fieldLineBuildId) return; // newer rebuild was requested — discard
 
-  // Pre-filter to lines that will produce a valid mesh (≥2 points).
-  // buildFieldLineGroup silently skips null meshes, so comparing children.length
-  // to tracedLines.length would be wrong if any line is degenerate.
+  // Pre-filter: skip lines that would produce a degenerate mesh (< 2 points).
   const renderableLines = tracedLines.filter((l) => l.points.length >= 2);
 
   const sameTopology =
@@ -240,13 +228,39 @@ async function rebuildFieldLines(morphDuration = 8200) {
     fieldLineGroup.children.length === renderableLines.length;
 
   if (sameTopology) {
-    startFieldLineTransition(renderableLines, morphDuration);
+    startFieldLineTransition(renderableLines, pendingMorphDuration);
   } else {
     rebuildFieldLinesFull(renderableLines);
   }
 
   const loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
+}
+
+/**
+ * Dispatch a field line rebuild to the worker.
+ * Returns immediately — the render loop is never blocked.
+ * The worker replies via onFieldLineWorkerMessage when tracing is complete.
+ */
+function rebuildFieldLines(morphDuration = 8200) {
+  const buildId = ++fieldLineBuildId;
+  pendingMorphDuration = morphDuration;
+
+  // Snapshot solar wind params so all seeds use a consistent sun position
+  // (params.sunLongitude changes every frame during playback).
+  const swParams = getSolarWindParams();
+  const swActive = params.solarWindEnabled;
+
+  getOrCreateFieldLineWorker().postMessage({
+    buildId,
+    latitudes: LATITUDE_SETS[params.numLatitudes - 1],
+    nLongitudes: params.numLongitudes,
+    bothHemispheres: swActive,
+    polarCapLatitudes: swActive ? [85, 88] : [],
+    coeffs,
+    maxDegree: params.maxDegree,
+    solarWindParams: swParams,
+  });
 }
 
 /**
@@ -1000,9 +1014,9 @@ async function init() {
   lastDataHour = Math.floor(initUnix / 3600) * 3600;
   timeline.refreshColors(); // paint the timeline's solar wind intensity background
   updateDatetime(); // position sun and moon from default date
-  await rebuildFieldLines();
+  rebuildFieldLines(); // dispatches to worker; field lines appear when worker replies
   applyVisualChanges(); // sync params → Three.js state (autoRotate, visibility) on startup
-  animate();
+  animate(); // render loop starts immediately — scene is interactive while field lines trace
 }
 
 init();

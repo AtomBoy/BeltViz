@@ -2,3 +2,4 @@ node_modules
 dist
 public/data/WGhour.d
 public/data/omni2_all_years.dat
+.vscode
