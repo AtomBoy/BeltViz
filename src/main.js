@@ -33,6 +33,8 @@ import { updateEnvironmentReadout, hideEnvironmentReadout } from './ui/environme
 import { KM_TO_SCENE } from './utils/constants.js';
 import { loadMonth, ensureMonthsForTime, getSolarWindAtTime, setOnMonthLoaded } from './physics/solarWindData.js';
 import { setSolarWindDataNote } from './ui/infoOverlay.js';
+import { createParticleSystem } from './scene/particleSystem.js';
+import { createAuroraRenderer } from './scene/auroraRenderer.js';
 
 // --- Params (mutable, controlled by GUI) ---
 const params = {
@@ -75,6 +77,18 @@ const params = {
   showMagnetopause: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
   datetimeString: '2026-01-01T00:00',
+  // Particle system
+  particles: {
+    enabled:   false,       // off by default — user opts in
+    species:   'both',      // 'electron' | 'proton' | 'both'
+    count:     800,         // max simultaneous particles
+    energyMeV: 1.0,         // representative electron energy (MeV)
+  },
+  // Aurora oval
+  aurora: {
+    enabled: false,
+    opacity: 1.0,
+  },
 };
 
 /**
@@ -877,6 +891,10 @@ function onSolarWindChange() {
 // --- Magnetopause mesh state ---
 let magnetopauseGroup = null;
 
+// --- Particle system and aurora ---
+let particleSystem = null;
+let auroraRenderer = null;
+
 function rebuildMagnetopause() {
   if (magnetopauseGroup) {
     scene.remove(magnetopauseGroup);
@@ -914,13 +932,24 @@ const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onSatelliteChange: updateSatelliteProbe,
   onSolarWindChange,
   onMagnetopauseChange,
+  // Particle / aurora changes are handled by the per-frame update() calls;
+  // no expensive rebuilds are needed when the user changes these params.
+  onParticleChange: () => {},
+  onAuroraChange:   () => {},
 });
 
 timeline = createTimeline({
   initialTime:       new Date(params.datetimeString),
   onTimeChange:      (iso) => lightUpdateDatetime(iso),
   onPause:           ()    => { fieldLineTransition = null; updateDatetime(false); },
-  onPeriodicRebuild: ()    => updateDatetime(true),
+  onPeriodicRebuild: ()    => {
+    // At 3600× and above, a field-line rebuild every 8 real seconds equals ≥ 8 hours of
+    // sim time — the sun drifts so far that the asymmetric field lines look wrong before
+    // the next rebuild arrives. Better to freeze the last good state and let the sun
+    // position update smoothly. Rebuilds resume automatically when speed drops.
+    if (timeline && timeline.getSpeed() >= 3600) return;
+    updateDatetime(true);
+  },
   getSolarWindData:  getSolarWindAtTime,
 });
 
@@ -935,22 +964,36 @@ window.addEventListener('resize', () => {
 });
 
 // --- Animation loop ---
+let lastFrameTime = 0;
+
 function animate(now) {
   requestAnimationFrame(animate);
+  // Real-time delta (capped to avoid large jumps after tab visibility changes).
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+  lastFrameTime = now;
+
   if (timeline) timeline.tick(now); // advance time before rendering to avoid 1-frame lag
   updateFieldLineTransition(now);
+
+  if (particleSystem) particleSystem.update(dt, getSolarWindParams(), params.particles, timeline?.getSpeed() ?? 1);
+  if (auroraRenderer) auroraRenderer.update(now / 1000, params.dst, params.aurora);
+
   controls.update();
   renderer.render(scene, camera);
 }
 
 // --- Init ---
 async function init() {
-  // Load January 2019 first so the default date (2019-01-01) has data immediately.
+  // Load January 2026 first so the default date (2026-01-01) has data immediately.
   // Neighboring months load in the background as the user navigates.
   await Promise.all([
     loadCoefficients(),
     loadMonth(2026, 1),
   ]);
+
+  // Create particle system and aurora (after scene is ready)
+  particleSystem = createParticleSystem(scene);
+  auroraRenderer = createAuroraRenderer(scene);
   setSolarWindDataNote('Solar wind: Qin-Denton/WGhour.d (2026)');
   const initUnix = Math.floor(new Date(params.datetimeString).getTime() / 1000);
   applyDataSolarWind(initUnix);

@@ -73,6 +73,17 @@
     .cite a:hover { text-decoration: underline; }
     .cite .cite-note { color: var(--gold); font-size: 12px; margin-top: 4px; }
 
+    /* ── Data table ── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px;
+                  margin: 10px 0 18px; }
+    .data-table th { background: var(--bg-card); color: #d0e8ff; font-weight: 600;
+                     padding: 8px 12px; text-align: left;
+                     border-bottom: 2px solid var(--accent2); }
+    .data-table td { padding: 7px 12px; border-bottom: 1px solid var(--border);
+                     color: var(--fg); vertical-align: top; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:nth-child(even) td { background: rgba(255,255,255,0.025); }
+
     /* ── Inline code ── */
     code { font-family: 'Courier New', monospace; font-size: 12.5px;
            background: rgba(100,150,200,0.1); padding: 1px 5px;
@@ -161,6 +172,216 @@
     (L&nbsp;=&nbsp;r&nbsp;/&nbsp;R<sub>E</sub>&nbsp;cos²λ<sub>m</sub>).
     The L-shell grids use the internal field only; the dipole L approximation breaks
     down with external fields in the tail and at the magnetopause.
+  </div>
+
+  <!-- ═══ RADIATION BELT PARTICLES ═══ -->
+  <h2>Radiation Belt Particle Physics</h2>
+
+  <div class="callout">
+    <strong>What the particle animation shows — and what it doesn't.</strong>
+    The animated dots represent the <em>azimuthal drift</em> of trapped charged particles around
+    Earth — the slowest of three nested periodic motions.
+    They do <strong>not</strong> show individual particle trajectories.
+    In reality, each particle simultaneously gyrates around a field line millions of times per second,
+    bounces back and forth between mirror points many times per second, <em>and</em> slowly drifts
+    around Earth over tens of minutes.
+    Only the drift is animated here because it is the motion that builds the ring current and
+    determines the large-scale structure of the radiation belts.
+  </div>
+
+  <h3>Three nested periodic motions</h3>
+  <p>Every trapped particle executes three independent periodic motions, each faster than the next:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Gyration</strong> — around a magnetic field line, at the particle's Larmor radius.<br>
+        Period: microseconds to milliseconds (MHz gyrofrequency).
+        The gyroradius of a 1&nbsp;MeV electron in Earth's inner belt is only a few kilometres —
+        far too small and fast to animate. Gyration is averaged over and not shown.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Bounce</strong> — back and forth along the field line between magnetic mirror points
+        in each hemisphere, where the increasing field strength reflects the particle.<br>
+        Period: 0.1–10 seconds.
+        In the visualization, bounce is represented by a <em>static spread</em> in magnetic latitude
+        (λ<sub>m</sub>) up to each particle's mirror point — particles are distributed along field
+        lines but do not oscillate, since the drift is the physically significant motion for the
+        belt structure.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Azimuthal drift</strong> — slowly around Earth due to the gradient and curvature
+        of the dipole field.<br>
+        Period: ~16 minutes (1&nbsp;MeV electrons at L&nbsp;=&nbsp;4) to several hours (lower
+        energy or larger L).<br>
+        <strong>This is what the animation shows.</strong>
+        Electrons drift <em>eastward</em> (counterclockwise viewed from the north pole);
+        protons drift <em>westward</em> (clockwise).
+        The drift periods in the animation are accelerated roughly 6× from physical rates
+        so the motion is clearly visible.
+      </div>
+    </div>
+  </div>
+
+  <h3>The ring current</h3>
+  <p>
+    The opposite drift directions of electrons and protons constitute the
+    <strong>ring current</strong> — a toroidal electric current circling Earth at roughly L&nbsp;=&nbsp;3–6.
+    It is not a current of individual charges moving in circles; it is the net statistical drift
+    of many particles whose gyration and bounce average out, leaving only the slow azimuthal motion.
+    The Dst geomagnetic index directly measures the ring current: more negative Dst means a stronger
+    ring current and a more disturbed magnetic field at Earth's surface.
+    During a geomagnetic storm the ring current can depress the equatorial surface field
+    by 100–400&nbsp;nT.
+  </p>
+
+  <h3>Storm-time injection</h3>
+  <p>
+    In quiet times the radiation belts are slowly replenished from the solar wind and
+    from substorm activity.
+    During geomagnetic storms, the compressed magnetotail on the nightside (midnight sector)
+    injects large populations of plasma-sheet particles inward, rapidly energising them
+    and enhancing the ring current.
+    New particles in this visualization therefore appear on the <strong>nightside</strong>
+    (the side of Earth facing away from the Sun) and then drift around to fill the belt —
+    matching the real injection geometry.
+    The injection rate and target L-shell both scale with the Dst index.
+  </p>
+
+  <h3>Aurora connection</h3>
+  <p>
+    Particles whose equatorial pitch angle falls below the
+    <strong>loss cone angle</strong> (α<sub>LC</sub>, a few degrees at large L)
+    are no longer magnetically trapped.
+    They spiral down field lines into the upper atmosphere at 80–300&nbsp;km altitude,
+    colliding with oxygen and nitrogen atoms and producing the aurora.
+    The foot of a field line at L&nbsp;≈&nbsp;5–7 reaches the Earth's surface at
+    roughly 65–75° geomagnetic latitude — the auroral oval.
+    Storm-time particle loss into the loss cone therefore appears as a
+    brightening aurora at high latitudes.
+    The aurora oval in this visualization brightens with the magnitude of the Dst index.
+  </p>
+
+  <h3>Live coupling to historical solar wind data</h3>
+  <p>
+    The particle injection rate and the aurora brightness are not fixed — they respond in real time
+    to the Dst geomagnetic index drawn from the historical solar wind record.
+    As the timeline advances, the app reads hourly Dst values from the same OMNI2-derived dataset
+    that drives the magnetic field model, so the belt and aurora activity you see reflects what was
+    actually happening in near-Earth space at that moment.
+  </p>
+  <p>
+    The table below summarises how Dst maps to belt activity in the visualization:
+  </p>
+  <table class="data-table">
+    <thead>
+      <tr><th>Dst (nT)</th><th>Condition</th><th>Injection rate</th><th>Target L-shells</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>≥ −20</td><td>Quiet</td><td>1× (baseline)</td><td>L = 3.5 – 5.5</td></tr>
+      <tr><td>−20 to −50</td><td>Moderate disturbance</td><td>up to 5×</td><td>L = 3.0 – 5.0</td></tr>
+      <tr><td>−50 to −150</td><td>Storm main phase</td><td>up to 20×</td><td>L = 2.5 – 4.5</td></tr>
+      <tr><td>&lt; −150</td><td>Severe storm</td><td>up to 50×</td><td>L = 2.0 – 4.0</td></tr>
+    </tbody>
+  </table>
+  <p>
+    During a severe storm the injection zone shifts markedly inward —
+    particles flood down to L&nbsp;=&nbsp;2, close to the inner belt — and the aurora oval
+    intensifies strongly. After the storm passes, the excess population slowly decays
+    through wave-particle scattering on timescales of tens of seconds in the outer belt
+    and many minutes in the inner belt (accelerated from real lifetimes of days to years
+    for visual clarity).
+  </p>
+
+  <h3>Finding active periods with the timeline</h3>
+  <p>
+    The most dramatic belt and aurora activity corresponds to large geomagnetic storms.
+    Use the timeline bar at the bottom of the screen to navigate to dates with historically
+    intense activity. Some notable events in the dataset:
+  </p>
+  <ul>
+    <li><strong>March 1989</strong> — one of the strongest storms of the modern era
+      (Dst ≈ −589&nbsp;nT), responsible for the Quebec power-grid blackout.</li>
+    <li><strong>October–November 2003</strong> ("Halloween storms") — two back-to-back
+      X-class flares with Dst reaching −383&nbsp;nT; aurora visible at mid-latitudes
+      across North America and Europe.</li>
+    <li><strong>September 2017</strong> — X9.3 flare (the largest of Solar Cycle 24),
+      Dst ≈ −142&nbsp;nT; aurora sightings as far south as Texas.</li>
+    <li><strong>May 2024</strong> — first severe storm (G5) in twenty years,
+      Dst ≈ −412&nbsp;nT; widespread aurora across the northern and southern hemispheres.</li>
+  </ul>
+  <p>
+    Navigate to any of these dates with the day buttons or by dragging the playhead,
+    then set the speed to 60× or 3600× to watch the belt fill and drain over hours.
+    Enable <em>Belt Particles</em> and <em>Aurora</em> in the control panel to see the
+    full effect. The Dst readout in the Solar Wind panel updates automatically as the
+    timeline advances.
+  </p>
+
+  <h3>Radiation belt particle physics — references</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Dynamics of Geomagnetically Trapped Radiation
+      </div>
+      <div class="cite-authors">
+        Roederer, J.G. (1970). Springer, New York.
+      </div>
+      <div class="cite-note">
+        Foundational text on guiding-center motion and drift-shell theory.
+        Drift period formulae (§3.4) and the McIlwain L-shell concept used throughout this app.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Particle Diffusion in the Radiation Belts
+      </div>
+      <div class="cite-authors">
+        Schulz, M., &amp; Lanzerotti, L.J. (1974). Springer, New York.
+      </div>
+      <div class="cite-note">
+        Drift-averaged equations of motion and the bounce-averaged drift period formula
+        (eq. 1.30) implemented in <code>src/physics/particleDrift.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Introduction to Geomagnetically Trapped Radiation
+      </div>
+      <div class="cite-authors">
+        Walt, M. (1994). Cambridge University Press.
+      </div>
+      <div class="cite-note">
+        Chapter 3–5 used for loss cone, particle lifetimes, and wave-particle interaction
+        background underlying the loss model.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Access of Energetic Particles to Inner Magnetosphere (Chapter 2 — Loss cone)
+      </div>
+      <div class="cite-authors">
+        Lyons, L.R., &amp; Schulz, M. (1989).
+        <em>Quantitative aspects of magnetospheric physics.</em>
+        American Geophysical Union.
+      </div>
+      <div class="cite-note">
+        Equatorial loss cone formula sin²(α<sub>LC</sub>) = 4&nbsp;/&nbsp;(L³&nbsp;√(4&nbsp;−&nbsp;3/L))
+        used in <code>src/physics/particleDrift.js:lossConeAngle()</code>.
+      </div>
+    </div>
+
   </div>
 
   <!-- ═══ PHYSICS MODELS ═══ -->

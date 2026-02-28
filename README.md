@@ -80,7 +80,7 @@ public/
 - [x] IGRF-14 magnetic field lines (Phase 1)
 - [x] L-shell/|B| isosurfaces, radiation belts, clipping planes, satellite probe (Phase 2)
 - [x] Solar wind interaction — T89c empirical external field, Shue magnetopause (Phase 3)
-- [ ] Tsyganenko T96/T01 model for multi-parameter storm driving (requires 6 SW inputs vs T89c's single Kp)
+- [X] Tsyganenko T96/T01 model for multi-parameter storm driving (requires 6 SW inputs vs T89c's single Kp)
 - [ ] Van Allen radiation belt particle visualization
 - [ ] Satellite orbit display (SGP4/TLE)
 - [ ] Time-varying field animation using secular variation coefficients

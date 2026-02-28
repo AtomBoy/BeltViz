@@ -18,6 +18,12 @@ export function createControlPanel(params, callbacks) {
     onSatelliteChange,
     onSolarWindChange,
     onMagnetopauseChange,
+    // Particle and aurora changes are handled by per-frame update() calls in main.js.
+    // These callbacks are accepted but currently unused (no-ops).
+    // eslint-disable-next-line no-unused-vars
+    onParticleChange = () => {},
+    // eslint-disable-next-line no-unused-vars
+    onAuroraChange   = () => {},
   } = callbacks;
 
   const gui = new GUI({ title: 'Controls' });
@@ -147,6 +153,29 @@ export function createControlPanel(params, callbacks) {
   });
   solarFolder.add(params, 'showMagnetopause').name('Show Magnetopause').onChange(onMagnetopauseChange);
   solarFolder.close();
+
+  // --- Particles folder ---
+  const particleFolder = gui.addFolder('Belt Particles');
+  particleFolder.add(params.particles, 'enabled').name('Show Particles');
+  particleFolder.add(params.particles, 'species', {
+    'Electrons (eastward)': 'electron',
+    'Protons (westward)':   'proton',
+    'Both':                 'both',
+  }).name('Species');
+  particleFolder.add(params.particles, 'count', 200, 2000, 100).name('Max Particles');
+  particleFolder.add(params.particles, 'energyMeV', {
+    '< 1 MeV (low)':    0.3,
+    '1–3 MeV (medium)': 2.0,
+    '> 3 MeV (high)':   5.0,
+  }).name('Electron Energy');
+
+  // --- Aurora folder ---
+  const auroraFolder = gui.addFolder('Aurora');
+  auroraFolder.add(params.aurora, 'enabled').name('Show Aurora');
+  auroraFolder.add(params.aurora, 'opacity', 0.1, 2.0, 0.05).name('Brightness');
+
+  particleFolder.close();
+  auroraFolder.close();
 
   /**
    * Refresh only the four solar wind value sliders.

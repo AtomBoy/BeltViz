@@ -395,6 +395,9 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
       updateDisplay();
     },
 
+    /** Current playback speed in sim-seconds per real-second. */
+    getSpeed() { return speed; },
+
     /**
      * Returns the ISO sim-time that will be current `realFutureMs` real milliseconds from now.
      * When paused, returns the current sim-time (no advancement).
