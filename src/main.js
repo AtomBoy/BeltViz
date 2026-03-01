@@ -79,7 +79,7 @@ const params = {
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
-  datetimeString: '2026-01-01T00:00',
+  datetimeString: '2025-11-06T00:00',
   // Particle system
   particles: {
     enabled:       false,  // off by default — user opts in

@@ -1,5 +1,7 @@
 # MagRad-CG — Magnetospheric Radiometric Cybernetic Garden
 
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightblue.svg)](https://creativecommons.org/licenses/by/4.0/)
+
 Interactive 3D visualization of Earth's magnetosphere: field lines, radiation belt isosurfaces, Van Allen belt particles, aurora, and historical solar wind playback. All physics runs client-side in the browser.
 
 For physics background, model descriptions, and citations see **[public/about.html](public/about.html)**.

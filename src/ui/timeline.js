@@ -130,7 +130,7 @@ function injectStyles() {
       border-left: 1px solid rgba(100, 150, 200, 0.2);
     }
     #tl-legend-title {
-      font-size: 9.5px; color: #7799bb; letter-spacing: .03em;
+      font-size: 12px; color: #7799bb; letter-spacing: .03em;
       white-space: nowrap; text-align: center;
     }
     #tl-legend-row {
