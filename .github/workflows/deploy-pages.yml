@@ -33,7 +33,7 @@ jobs:
           echo "mrcg.atomodo.com" > dist/CNAME
 
       - name: Upload static files
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
