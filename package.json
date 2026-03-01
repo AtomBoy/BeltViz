@@ -10,9 +10,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.59.0",
+    
     "lil-gui": "^0.20.0",
     "three": "^0.172.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.59.0"
   },
   "devDependencies": {
     "vite": "^6.0.0",
