@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About — MagRad-CG</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:        #000610;
+      --bg-card:   #040d1f;
+      --border:    rgba(100,150,200,0.18);
+      --accent:    #88ccff;
+      --accent2:   #5599dd;
+      --text:      #c8ddf0;
+      --dim:       #6688aa;
+      --red:       #e05050;
+      --gold:      #c8a84a;
+    }
+
+    html { background: var(--bg); color: var(--text);
+           font-family: 'Helvetica Neue', Arial, sans-serif;
+           font-size: 15px; line-height: 1.65; }
+
+    body { max-width: 860px; margin: 0 auto; padding: 48px 24px 80px; }
+
+    /* ── Navigation ── */
+    .nav { display: flex; justify-content: space-between; align-items: center;
+           margin-bottom: 40px; padding-bottom: 16px;
+           border-bottom: 1px solid var(--border); }
+    .nav a { color: var(--accent); text-decoration: none; font-size: 13px;
+              letter-spacing: .04em; }
+    .nav a:hover { text-decoration: underline; }
+    .nav-title { color: var(--dim); font-size: 12px; letter-spacing: .08em;
+                 text-transform: uppercase; }
+
+    /* ── Hero ── */
+    h1 { font-size: 2rem; font-weight: 300; color: var(--accent);
+         letter-spacing: .04em; margin-bottom: 6px; }
+    .subtitle { color: var(--dim); font-size: 14px; letter-spacing: .06em;
+                text-transform: uppercase; margin-bottom: 32px; }
+    .lead { font-size: 16px; color: #a8c8e8; margin-bottom: 40px;
+            max-width: 680px; }
+
+    /* ── Section headings ── */
+    h2 { font-size: 1rem; font-weight: 600; color: var(--accent);
+         letter-spacing: .08em; text-transform: uppercase;
+         margin: 48px 0 20px;
+         padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: .9rem; font-weight: 600; color: #a8c8e8;
+         letter-spacing: .04em; margin: 20px 0 6px; }
+
+    p { margin-bottom: 12px; }
+
+    /* ── Cards for pipeline steps ── */
+    .steps { display: grid; gap: 12px; margin-bottom: 8px; }
+    .step { background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 6px; padding: 16px 20px; display: grid;
+            grid-template-columns: 28px 1fr; gap: 0 14px; align-items: start; }
+    .step-num { color: var(--accent2); font-size: 13px; font-weight: 700;
+                font-family: 'Courier New', monospace; padding-top: 2px; }
+    .step-body strong { color: #d0e8ff; }
+    .step-body { font-size: 14px; }
+
+    /* ── Citation blocks ── */
+    .cites { display: grid; gap: 10px; }
+    .cite { background: var(--bg-card); border-left: 3px solid var(--accent2);
+            border-radius: 0 6px 6px 0; padding: 12px 16px; font-size: 13.5px; }
+    .cite .cite-title { color: #d0e8ff; font-style: italic; }
+    .cite .cite-authors { color: var(--dim); font-size: 12.5px; margin-top: 3px; }
+    .cite a { color: var(--accent); text-decoration: none; }
+    .cite a:hover { text-decoration: underline; }
+    .cite .cite-note { color: var(--gold); font-size: 12px; margin-top: 4px; }
+
+    /* ── Data table ── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px;
+                  margin: 10px 0 18px; }
+    .data-table th { background: var(--bg-card); color: #d0e8ff; font-weight: 600;
+                     padding: 8px 12px; text-align: left;
+                     border-bottom: 2px solid var(--accent2); }
+    .data-table td { padding: 7px 12px; border-bottom: 1px solid var(--border);
+                     color: var(--fg); vertical-align: top; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:nth-child(even) td { background: rgba(255,255,255,0.025); }
+
+    /* ── Inline code ── */
+    code { font-family: 'Courier New', monospace; font-size: 12.5px;
+           background: rgba(100,150,200,0.1); padding: 1px 5px;
+           border-radius: 3px; color: #a0d0ff; }
+
+    /* ── Footer ── */
+    footer { margin-top: 64px; padding-top: 20px;
+             border-top: 1px solid var(--border);
+             color: var(--dim); font-size: 12.5px; }
+    footer a { color: var(--accent2); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Callout ── */
+    .callout { background: rgba(100,150,200,0.07); border: 1px solid var(--border);
+               border-radius: 6px; padding: 14px 18px; font-size: 14px;
+               margin: 16px 0; }
+    .callout strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="/">← Back to visualization</a>
+    <span class="nav-title">MagRad-CG</span>
+  </nav>
+
+  <h1>MagRad-CG</h1>
+  <p class="subtitle">Magnetospheric Radiometric Cybernetic Garden</p>
+
+  <p class="lead">
+    An interactive 3D visualization of Earth's magnetic field and magnetosphere,
+    driven by real geophysical models and historical solar wind observations.
+    All physics runs in the browser — no server, no plugins.
+  </p>
+
+  <!-- ═══ HOW IT WORKS ═══ -->
+  <h2>How It Works</h2>
+
+  <p>The visualization is computed in three layers, stacked from the inside out:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Internal field — IGRF-14</strong><br>
+        Earth's main magnetic field is computed from the
+        International Geomagnetic Reference Field (IGRF-14), a degree-13 spherical
+        harmonic model published by NOAA/IAGA. The app evaluates the magnetic
+        potential at each point and integrates B(r,θ,φ) using fourth-order
+        Runge–Kutta (RK4) to trace field lines from seed points on the surface.
+        The spherical harmonic degree slider lets you see how successive multipoles
+        add complexity to the pure tilted dipole.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>External field — Tsyganenko T01</strong><br>
+        Solar wind interaction reshapes the field significantly: dayside field lines
+        are compressed by the solar wind ram pressure; nightside lines are stretched
+        into the long magnetotail. The <em>T01</em> empirical model (Tsyganenko 2002)
+        captures all major current systems — ring current, magnetotail current sheet,
+        Birkeland currents, Chapman-Ferraro compression, and IMF penetration — in a
+        single closed-form evaluation. It is parameterized by dynamic pressure,
+        Dst, IMF By/Bz, and the G1/G2 storm-history indices from the Qin-Denton
+        database. The Shue (1998) model defines the magnetopause boundary.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Historical data playback — OMNI2 + WGhour.d</strong><br>
+        The timeline at the bottom drives the solar wind inputs from real hourly
+        observations spanning 1963 to the present. Data comes from the NASA OMNI2
+        merged dataset (solar wind speed, density, IMF By/Bz, Dst) combined with
+        G1 and G2 pre-computed from the Qin-Denton database using Robert Weigel's
+        <em>QinDenton</em> Fortran tool. Monthly JSON files (~28 KB each) are
+        lazy-loaded as you navigate, so only the months you visit are fetched.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Radiation belts</strong> — The inner and outer Van Allen belts are shown
+    as L-shell isosurfaces computed from the dipole approximation
+    (L&nbsp;=&nbsp;r&nbsp;/&nbsp;R<sub>E</sub>&nbsp;cos²λ<sub>m</sub>).
+    The L-shell grids use the internal field only; the dipole L approximation breaks
+    down with external fields in the tail and at the magnetopause.
+  </div>
+
+  <!-- ═══ MAGNETOSPHERE AND SOLAR WEATHER ═══ -->
+  <h2>The Magnetosphere and Solar Weather</h2>
+
+  <h3>Earth's magnetic shield</h3>
+  <p>
+    Earth's magnetic field is confined into a teardrop-shaped cavity — the
+    <strong>magnetosphere</strong> — by the continuous outflow of magnetized plasma from
+    the Sun known as the <strong>solar wind</strong>. Blowing at 300–800&nbsp;km/s, the
+    solar wind carries its own embedded magnetic field, the
+    <strong>interplanetary magnetic field (IMF)</strong>.
+    Where the solar wind first encounters Earth's field, a standing shock wave called the
+    <strong>bow shock</strong> forms at roughly 13–15&nbsp;R<sub>E</sub> on the dayside.
+    The boundary where Earth's magnetic pressure balances the solar wind ram pressure is
+    the <strong>magnetopause</strong>, located at roughly 10–11&nbsp;R<sub>E</sub> under
+    quiet conditions.
+    On the nightside the field cannot balance the dynamic pressure, and is dragged out
+    hundreds of R<sub>E</sub> downstream into the long <strong>magnetotail</strong>, with
+    two lobes of nearly antiparallel field separated by a thin current sheet.
+  </p>
+  <p>
+    This asymmetry is visible in the field line tubes in this visualization: dayside lines
+    are short and tightly arched; nightside lines are drawn far into the tail. The magnetopause
+    shape itself can be displayed via <em>Solar Wind → Show Magnetopause</em>.
+  </p>
+
+  <h3>The key driver: IMF B<sub>z</sub></h3>
+  <p>
+    The most important parameter governing how strongly the solar wind couples to Earth
+    is the <strong>north-south component of the IMF (B<sub>z</sub>)</strong>.
+    When B<sub>z</sub> is northward — parallel to Earth's dayside field — coupling is weak
+    and the magnetosphere is relatively closed.
+    When B<sub>z</sub> turns southward, the antiparallel field geometry at the magnetopause
+    nose enables <strong>magnetic reconnection</strong>: field lines break and re-connect
+    across the boundary, opening a direct channel for solar wind plasma and energy to flow
+    into the magnetosphere.
+    Sustained southward B<sub>z</sub> is the single greatest predictor of geomagnetic
+    storm severity, and is the primary input that drives ring current inflation as measured
+    by the Dst index.
+  </p>
+
+  <h3>Field lines versus L-shell surfaces</h3>
+  <p>Two distinct representations appear in this visualization, answering different questions:</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">①</div>
+      <div class="step-body">
+        <strong>Field line tubes</strong> (<em>Show Field Lines</em> in the control panel)
+        trace the actual path of the magnetic field vector <strong>B</strong>(r), computed by
+        fourth-order Runge–Kutta integration of the combined IGRF-14&nbsp;+&nbsp;T01 field.
+        They show the <em>magnetic highways</em> along which particles gyrate and bounce.
+        With solar wind enabled the tubes are visibly asymmetric: compressed and arched on
+        the dayside, stretched into the nightside tail. The shape responds in real time to
+        the solar wind sliders and to historical data during playback.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">②</div>
+      <div class="step-body">
+        <strong>L-shell surfaces</strong> (the solid radiation-belt shells and the transparent
+        isosurfaces under <em>Isosurfaces → L-shell field topology</em>) show surfaces of
+        constant <strong>McIlwain L</strong> — a parameter that approximates the equatorial
+        distance (in R<sub>E</sub>) at which the local field line would cross the equatorial
+        plane in a dipole field. These surfaces represent <em>drift shells</em>: a trapped
+        particle does not stay on a single field line but drifts azimuthally around Earth,
+        sweeping through a full ring of field lines. L tells you which drift orbit the
+        particle occupies, not which field line it sits on. In a pure dipole these shells
+        are perfect tori; with T01 enabled they distort, and during severe storms the
+        outer boundary can be clipped by the magnetopause.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Limitation of the L approximation.</strong>
+    McIlwain L is derived from the local field direction using the dipole formula
+    L&nbsp;=&nbsp;r&nbsp;/&nbsp;(R<sub>E</sub>&nbsp;cos²λ<sub>m</sub>).
+    It is a good approximation in the inner magnetosphere (L&nbsp;&lt;&nbsp;4) but degrades
+    in the distorted outer belt and magnetotail where the field topology departs strongly
+    from a dipole. The rigorous equivalent, <em>Roederer L*</em>, requires tracing the full
+    drift orbit in the 3D field — computationally expensive and outside the scope of this
+    real-time app (Roederer &amp; Lejosne 2018).
+  </div>
+
+  <h3>How solar weather reshapes the radiation belts</h3>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Condition</th>
+        <th>Magnetopause&nbsp;(R<sub>E</sub>)</th>
+        <th>Outer belt geometry</th>
+        <th>Belt population</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Quiet</strong><br><small>Dst&nbsp;≈&nbsp;0, B<sub>z</sub>&nbsp;≈&nbsp;0</small></td>
+        <td>~10–11</td>
+        <td>Near-symmetric torus</td>
+        <td>Slowly replenished by substorm activity and chorus wave acceleration</td>
+      </tr>
+      <tr>
+        <td><strong>Moderate storm</strong><br><small>Dst −30 to −100&nbsp;nT</small></td>
+        <td>7–8</td>
+        <td>Slightly compressed dayside; ring current belt enhanced</td>
+        <td>Plasma-sheet injection intensifies; outer belt fills; aurora oval brightens and expands equatorward</td>
+      </tr>
+      <tr>
+        <td><strong>Severe storm</strong><br><small>Dst&nbsp;&lt;&nbsp;−100&nbsp;nT</small></td>
+        <td>5–7</td>
+        <td>Outer edge (L&nbsp;≈&nbsp;6) may intersect the magnetopause</td>
+        <td><strong>Magnetopause shadowing</strong>: outermost electrons escape in hours; deep injection from nightside fills the inner region; inner belt (L&nbsp;&lt;&nbsp;2) remains essentially unchanged</td>
+      </tr>
+      <tr>
+        <td><strong>Recovery</strong><br><small>hours–days after</small></td>
+        <td>Expanding to ~10</td>
+        <td>Gradually returns to torus</td>
+        <td>Chorus waves re-accelerate surviving electrons; hiss waves slowly drain the slot region between the belts</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Magnetopause shadowing</h3>
+  <p>
+    When the compressed magnetopause crosses inside the outermost drift shells, electrons
+    on those shells encounter the boundary on every azimuthal drift pass and escape into
+    the solar wind. This process — <strong>magnetopause shadowing</strong> — can deplete
+    electrons at L&nbsp;&gt;&nbsp;5–6 by 60–99% within a few hours of storm onset
+    (Herrera et al. 2016; Staples et al. 2022).
+    In this visualization, with the Severe Storm solar wind preset enabled, the outer
+    belt L-shell surface is cut open on the dayside, leaving an incomplete torus: the
+    open region represents drift shells that particles cannot maintain without crossing the
+    magnetopause and being lost. The belt recovers when the solar wind pressure relents
+    and new particles are injected on the nightside.
+  </p>
+  <p>
+    Whether a given storm ultimately <em>enhances</em> or <em>depletes</em> the outer
+    belt depends on which process dominates — injection and wave acceleration, or
+    loss to the magnetopause and atmosphere. This stochastic competition is an active
+    area of research and explains why no two geomagnetic storms produce the same
+    radiation belt outcome.
+  </p>
+
+  <h3>Solar wind and magnetosphere — references</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Observation of high-intensity radiation by satellites 1958&nbsp;Alpha and Gamma
+      </div>
+      <div class="cite-authors">
+        Van Allen, J.A., Ludwig, G.H., Ray, E.C., &amp; McIlwain, C.E. (1958).
+        <em>Jet Propulsion</em>, 28, 588–592.
+      </div>
+      <div class="cite-note">
+        Discovery of the inner radiation belt from Explorer&nbsp;1 and Explorer&nbsp;3 data.
+        The outer belt was confirmed shortly after by Pioneer&nbsp;3.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Interplanetary field and geomagnetic storms
+      </div>
+      <div class="cite-authors">
+        Dungey, J.W. (1961). <em>Physical Review Letters</em>, 6, 47–48.
+        <a href="https://doi.org/10.1103/PhysRevLett.6.47" target="_blank">doi:10.1103/PhysRevLett.6.47</a>
+      </div>
+      <div class="cite-note">
+        Predicted that southward IMF enables dayside magnetic reconnection — the fundamental
+        mechanism by which solar wind energy enters the magnetosphere and drives storms.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        The Van Allen Probes mission
+      </div>
+      <div class="cite-authors">
+        Mauk, B.H., Fox, N.J., Kanekal, S.G., Kersten, K., Sibeck, D.G., &amp; Ukhorskiy, A. (2013).
+        <em>Space Science Reviews</em>, 179, 3–27.
+        <a href="https://doi.org/10.1007/s11214-012-9908-y" target="_blank">doi:10.1007/s11214-012-9908-y</a>
+      </div>
+      <div class="cite-note">
+        Overview of the RBSP/Van Allen Probes mission (2012–2019) that transformed
+        understanding of outer belt dynamics: storm-time injection, magnetopause loss,
+        wave-particle acceleration, and the slot region between the two belts.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Coordinates for representing radiation belt particle flux
+      </div>
+      <div class="cite-authors">
+        Roederer, J.G., &amp; Lejosne, S. (2018).
+        <em>Journal of Geophysical Research: Space Physics</em>, 123, 1381–1387.
+        <a href="https://doi.org/10.1002/2017JA025053" target="_blank">doi:10.1002/2017JA025053</a>
+      </div>
+      <div class="cite-note">
+        Clarifies the distinction between McIlwain L (local dipole approximation) and
+        Roederer L* (full drift-shell tracing); the source of the coordinate limitation
+        noted in this app's L-shell surfaces.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Characterizing magnetopause shadowing effects in the outer electron radiation belt
+        during geomagnetic storms
+      </div>
+      <div class="cite-authors">
+        Herrera, D., Maget, V.F., &amp; Sicard-Piet, A. (2016).
+        <em>Journal of Geophysical Research: Space Physics</em>, 121, 9517–9530.
+        <a href="https://doi.org/10.1002/2016JA022825" target="_blank">doi:10.1002/2016JA022825</a>
+      </div>
+      <div class="cite-note">
+        Quantifies magnetopause shadowing as a dominant storm-time loss mechanism for the
+        outer belt; source for the 60–99% depletion figures cited in this app.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Resolving magnetopause shadowing using multimission measurements of phase space density
+      </div>
+      <div class="cite-authors">
+        Staples, F.A., Rae, I.J., Forsyth, C., Martin, C.J., &amp; DeWit, J. (2022).
+        <em>Journal of Geophysical Research: Space Physics</em>, 127, e2021JA029298.
+        <a href="https://doi.org/10.1029/2021JA029298" target="_blank">doi:10.1029/2021JA029298</a>
+      </div>
+      <div class="cite-note">
+        Multi-spacecraft confirmation of rapid magnetopause shadowing losses; independent
+        verification of the Herrera et al. loss-rate estimates.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ RADIATION BELT PARTICLES ═══ -->
+  <h2>Radiation Belt Particle Physics</h2>
+
+  <div class="callout">
+    <strong>What the particle animation shows — and what it doesn't.</strong>
+    The animated dots represent the <em>azimuthal drift</em> of trapped charged particles around
+    Earth — the slowest of three nested periodic motions.
+    They do <strong>not</strong> show individual particle trajectories.
+    In reality, each particle simultaneously gyrates around a field line millions of times per second,
+    bounces back and forth between mirror points many times per second, <em>and</em> slowly drifts
+    around Earth over tens of minutes.
+    Only the drift is animated here because it is the motion that builds the ring current and
+    determines the large-scale structure of the radiation belts.
+  </div>
+
+  <h3>Three nested periodic motions</h3>
+  <p>Every trapped particle executes three independent periodic motions, each faster than the next:</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Gyration</strong> — around a magnetic field line, at the particle's Larmor radius.<br>
+        Period: microseconds to milliseconds (MHz gyrofrequency).
+        The gyroradius of a 1&nbsp;MeV electron in Earth's inner belt is only a few kilometres —
+        far too small and fast to animate. Gyration is averaged over and not shown.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Bounce</strong> — back and forth along the field line between magnetic mirror points
+        in each hemisphere, where the increasing field strength reflects the particle.<br>
+        Period: 0.1–10 seconds.
+        In the visualization, bounce is represented by a <em>static spread</em> in magnetic latitude
+        (λ<sub>m</sub>) up to each particle's mirror point — particles are distributed along field
+        lines but do not oscillate, since the drift is the physically significant motion for the
+        belt structure.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Azimuthal drift</strong> — slowly around Earth due to the gradient and curvature
+        of the dipole field.<br>
+        Period: ~16 minutes (1&nbsp;MeV electrons at L&nbsp;=&nbsp;4) to several hours (lower
+        energy or larger L).<br>
+        <strong>This is what the animation shows.</strong>
+        Electrons drift <em>eastward</em> (counterclockwise viewed from the north pole);
+        protons drift <em>westward</em> (clockwise).
+        The drift periods in the animation are accelerated roughly 6× from physical rates
+        so the motion is clearly visible.
+      </div>
+    </div>
+  </div>
+
+  <h3>The ring current</h3>
+  <p>
+    The opposite drift directions of electrons and protons constitute the
+    <strong>ring current</strong> — a toroidal electric current circling Earth at roughly L&nbsp;=&nbsp;3–6.
+    It is not a current of individual charges moving in circles; it is the net statistical drift
+    of many particles whose gyration and bounce average out, leaving only the slow azimuthal motion.
+    The Dst geomagnetic index directly measures the ring current: more negative Dst means a stronger
+    ring current and a more disturbed magnetic field at Earth's surface.
+    During a geomagnetic storm the ring current can depress the equatorial surface field
+    by 100–400&nbsp;nT.
+  </p>
+
+  <h3>Storm-time injection</h3>
+  <p>
+    In quiet times the radiation belts are slowly replenished from the solar wind and
+    from substorm activity.
+    During geomagnetic storms, the compressed magnetotail on the nightside (midnight sector)
+    injects large populations of plasma-sheet particles inward, rapidly energising them
+    and enhancing the ring current.
+    New particles in this visualization therefore appear on the <strong>nightside</strong>
+    (the side of Earth facing away from the Sun) and then drift around to fill the belt —
+    matching the real injection geometry.
+    The injection rate and target L-shell both scale with the Dst index.
+  </p>
+
+  <h3>Four particle populations — what the visualization shows</h3>
+  <p>
+    The inner and outer belts are not populated by a single species. The visualization models
+    four physically distinct populations, each with a different source, species, energy, and
+    drift direction. They are distinguished by colour: <strong>orange = protons</strong>,
+    <strong>blue = electrons</strong>.
+  </p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">A</div>
+      <div class="step-body">
+        <strong style="color:#e07030;">Inner belt protons — CRAND source (L = 1.2–2.0)</strong><br>
+        <em>Cosmic Ray Albedo Neutron Decay</em>: galactic cosmic rays (the most energetic particles
+        in the universe) continuously bombard Earth's upper atmosphere. They produce cascades of
+        secondary neutrons. Some of those neutrons escape upward and then decay in flight —
+        n&nbsp;→&nbsp;p&nbsp;+&nbsp;e<sup>−</sup>&nbsp;+&nbsp;ν̄<sub>e</sub> — creating a proton
+        and an electron that may be magnetically trapped. The resulting protons accumulate deep in
+        the inner belt. This source is <strong>constant and independent of solar wind</strong> —
+        it runs whether the Sun is active or quiet. Orange particles, drifting slowly westward
+        (clockwise from the north pole), with very long visual lifetimes (300–600 s).
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">B</div>
+      <div class="step-body">
+        <strong style="color:#4070e0;">Inner belt electrons — inward diffusion (L = 1.5–2.0)</strong><br>
+        Electrons from the outer belt slowly diffuse inward through radial diffusion, driven by
+        ULF wave activity. They accumulate in the outer portion of the inner belt (L&nbsp;=&nbsp;1.5–2.0)
+        but rarely reach the deep inner belt (L&nbsp;&lt;&nbsp;1.5) where the proton population
+        dominates. This is a small, steady population — independent of the current storm state.
+        Blue particles, drifting eastward (counterclockwise) and visibly <em>faster</em> than
+        the colocated CRAND protons: at the same L-shell, 1&nbsp;MeV electrons complete an orbit
+        in roughly one-sixth the time of 30&nbsp;MeV CRAND protons (drift period ∝ 1/E).
+        When viewed together, the overlapping orange and blue glow of populations A and B produces
+        a warm, mixed-colour inner belt — a visible signature of two species coexisting.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">C</div>
+      <div class="step-body">
+        <strong style="color:#4070e0;">Outer belt electrons — storm injection (L = 3.0–6.0)</strong><br>
+        During geomagnetic storms, the compressed nightside plasma sheet injects large fluxes of
+        electrons inward. These electrons are quickly energised by betatron and Fermi acceleration
+        during inward transport, and further accelerated over hours to days by chorus wave-particle
+        interactions. This is the most dynamic population: the outer belt can increase by three
+        to four orders of magnitude in flux within a day, then deplete just as rapidly through
+        magnetopause shadowing and whistler-mode hiss scattering. Blue particles appearing on
+        the nightside and drifting rapidly eastward.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">D</div>
+      <div class="step-body">
+        <strong style="color:#e07030;">Ring current protons — storm injection (L = 1.5–4.5)</strong><br>
+        Injected alongside the outer belt electrons from the nightside plasma sheet, these are the
+        10–300&nbsp;keV protons that <em>are</em> the ring current — the same current whose
+        depression of Earth's surface field we measure as the Dst index. The Dst is, in effect,
+        a direct measurement of the energy content of these protons. They inhabit a wider L-range
+        than the outer belt electrons and, crucially, are <strong>not blocked by the slot region</strong>
+        — protons can exist freely in the slot (L&nbsp;=&nbsp;2–3). Orange particles drifting
+        westward, injection rising with storm intensity.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>What to look for in the visualization:</strong>
+    <ul style="margin: 8px 0 0 16px; line-height: 1.9;">
+      <li><strong>Inner belt colour mix</strong> — the deep inner belt (L&nbsp;&lt;&nbsp;2) glows orange (CRAND protons)
+        with a blue wash from diffusion electrons. The combined additive glow appears warm-white at high particle density.</li>
+      <li><strong>Drift speed contrast</strong> — watch the inner belt closely: orange protons crawl westward while blue electrons
+        streak eastward in the same region, crossing through each other. This is not a simulation artefact — it is real physics.</li>
+      <li><strong>The slot gap</strong> — in quiet conditions (Dst near 0), the region between L&nbsp;≈&nbsp;2 and L&nbsp;≈&nbsp;3
+        is conspicuously dark of electrons. Electrons are rapidly scattered out by electromagnetic ion cyclotron (EMIC) and
+        whistler-mode hiss waves. Orange ring current protons may still pass through the slot.</li>
+      <li><strong>Storm-time injection</strong> — scrub the timeline to a storm event (e.g. May 2024). Watch outer belt
+        electrons (blue) appear on the nightside and sweep eastward, filling the outer belt within minutes of simulation time.
+        The target L-range shifts inward as Dst drops.</li>
+      <li><strong>Inner belt stability</strong> — no matter how fierce the storm, the CRAND proton population (A) barely
+        changes. The inner belt has been building steadily for billions of years and cannot be depleted by a single storm.</li>
+      <li><strong>Belt isosurface colour</strong> — the rendered shell surfaces brighten and shift from blue toward blue-white
+        during storms, encoding the elevated outer belt electron flux via the empirical Kp/Dst model (Meredith et al. 2003).</li>
+    </ul>
+  </div>
+
+  <h3>Aurora connection</h3>
+  <p>
+    Particles whose equatorial pitch angle falls below the
+    <strong>loss cone angle</strong> (α<sub>LC</sub>, a few degrees at large L)
+    are no longer magnetically trapped.
+    They spiral down field lines into the upper atmosphere at 80–300&nbsp;km altitude,
+    colliding with oxygen and nitrogen atoms and producing the aurora.
+    The foot of a field line at L&nbsp;≈&nbsp;5–7 reaches the Earth's surface at
+    roughly 65–75° geomagnetic latitude — the auroral oval.
+    Storm-time particle loss into the loss cone therefore appears as a
+    brightening aurora at high latitudes.
+    The aurora oval in this visualization brightens with the magnitude of the Dst index.
+  </p>
+
+  <h3>Live coupling to historical solar wind data</h3>
+  <p>
+    The particle injection rate and the aurora brightness are not fixed — they respond in real time
+    to the Dst geomagnetic index drawn from the historical solar wind record.
+    As the timeline advances, the app reads hourly Dst values from the same OMNI2-derived dataset
+    that drives the magnetic field model, so the belt and aurora activity you see reflects what was
+    actually happening in near-Earth space at that moment.
+  </p>
+  <p>
+    The table below summarises how Dst maps to belt activity in the visualization:
+  </p>
+  <table class="data-table">
+    <thead>
+      <tr><th>Dst (nT)</th><th>Condition</th><th>Injection rate</th><th>Target L-shells</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>≥ −20</td><td>Quiet</td><td>1× (baseline)</td><td>L = 3.5 – 5.5</td></tr>
+      <tr><td>−20 to −50</td><td>Moderate disturbance</td><td>up to 5×</td><td>L = 3.0 – 5.0</td></tr>
+      <tr><td>−50 to −150</td><td>Storm main phase</td><td>up to 20×</td><td>L = 2.5 – 4.5</td></tr>
+      <tr><td>&lt; −150</td><td>Severe storm</td><td>up to 50×</td><td>L = 2.0 – 4.0</td></tr>
+    </tbody>
+  </table>
+  <p>
+    During a severe storm the injection zone shifts markedly inward —
+    particles flood down to L&nbsp;=&nbsp;2, close to the inner belt — and the aurora oval
+    intensifies strongly. After the storm passes, the excess population slowly decays
+    through wave-particle scattering on timescales of tens of seconds in the outer belt
+    and many minutes in the inner belt (accelerated from real lifetimes of days to years
+    for visual clarity).
+  </p>
+
+  <h3>Finding active periods with the timeline</h3>
+  <p>
+    The most dramatic belt and aurora activity corresponds to large geomagnetic storms.
+    Use the timeline bar at the bottom of the screen to navigate to dates with historically
+    intense activity. Some notable events in the dataset:
+  </p>
+  <ul>
+    <li><strong>March 1989</strong> — one of the strongest storms of the modern era
+      (Dst ≈ −589&nbsp;nT), responsible for the Quebec power-grid blackout.</li>
+    <li><strong>October–November 2003</strong> ("Halloween storms") — two back-to-back
+      X-class flares with Dst reaching −383&nbsp;nT; aurora visible at mid-latitudes
+      across North America and Europe.</li>
+    <li><strong>September 2017</strong> — X9.3 flare (the largest of Solar Cycle 24),
+      Dst ≈ −142&nbsp;nT; aurora sightings as far south as Texas.</li>
+    <li><strong>May 2024</strong> — first severe storm (G5) in twenty years,
+      Dst ≈ −412&nbsp;nT; widespread aurora across the northern and southern hemispheres.</li>
+  </ul>
+  <p>
+    Navigate to any of these dates with the day buttons or by dragging the playhead,
+    then set the speed to 60× or 3600× to watch the belt fill and drain over hours.
+    Enable <em>Belt Particles</em> and <em>Aurora</em> in the control panel to see the
+    full effect. The Dst readout in the Solar Wind panel updates automatically as the
+    timeline advances.
+  </p>
+
+  <h3>Radiation belt particle physics — references</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Dynamics of Geomagnetically Trapped Radiation
+      </div>
+      <div class="cite-authors">
+        Roederer, J.G. (1970). Springer, New York.
+      </div>
+      <div class="cite-note">
+        Foundational text on guiding-center motion and drift-shell theory.
+        Drift period formulae (§3.4) and the McIlwain L-shell concept used throughout this app.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Particle Diffusion in the Radiation Belts
+      </div>
+      <div class="cite-authors">
+        Schulz, M., &amp; Lanzerotti, L.J. (1974). Springer, New York.
+      </div>
+      <div class="cite-note">
+        Drift-averaged equations of motion and the bounce-averaged drift period formula
+        (eq. 1.30) implemented in <code>src/physics/particleDrift.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Introduction to Geomagnetically Trapped Radiation
+      </div>
+      <div class="cite-authors">
+        Walt, M. (1994). Cambridge University Press.
+      </div>
+      <div class="cite-note">
+        Chapter 3–5 used for loss cone, particle lifetimes, and wave-particle interaction
+        background underlying the loss model.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Access of Energetic Particles to Inner Magnetosphere (Chapter 2 — Loss cone)
+      </div>
+      <div class="cite-authors">
+        Lyons, L.R., &amp; Schulz, M. (1989).
+        <em>Quantitative aspects of magnetospheric physics.</em>
+        American Geophysical Union.
+      </div>
+      <div class="cite-note">
+        Equatorial loss cone formula sin²(α<sub>LC</sub>) = 4&nbsp;/&nbsp;(L³&nbsp;√(4&nbsp;−&nbsp;3/L))
+        used in <code>src/physics/particleDrift.js:lossConeAngle()</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Outer zone relativistic electron acceleration associated with substorm-enhanced
+        whistler mode chorus
+      </div>
+      <div class="cite-authors">
+        Meredith, N.P., Cain, M., Horne, R.B., Thorne, R.M., Summers, D., &amp; Anderson, R.R. (2003).
+        <em>Journal of Geophysical Research: Space Physics</em>, 108(A6), 1248.
+        <a href="https://doi.org/10.1029/2002JA009511" target="_blank">doi:10.1029/2002JA009511</a>
+      </div>
+      <div class="cite-note">
+        Empirical basis for the Kp-driven outer belt electron flux model
+        (<code>computeBeltFlux</code> in <code>src/physics/beltFlux.js</code>).
+        Outer belt flux scales strongly with Kp through chorus wave acceleration.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        An extreme distortion of the Van Allen belt arising from the "Halloween" solar storm
+        in 2003
+      </div>
+      <div class="cite-authors">
+        Baker, D.N., Kanekal, S.G., Li, X., Monk, S.P., Goldstein, J., &amp; Burch, J.L. (2004).
+        <em>Nature</em>, 432, 878–881.
+        <a href="https://doi.org/10.1038/nature03116" target="_blank">doi:10.1038/nature03116</a>
+      </div>
+      <div class="cite-note">
+        Documents the extreme slot-region filling observed during the Halloween 2003 storms
+        (Dst ≈ −383&nbsp;nT), the observational basis for the slot-filling threshold
+        (Dst&nbsp;&lt;&nbsp;−100&nbsp;nT) implemented in <code>computeBeltFlux</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        The cosmic-ray albedo-neutron decay origin of the inner radiation belt
+      </div>
+      <div class="cite-authors">
+        Singer, S.F. (1958). <em>Physical Review Letters</em>, 1, 181–183.
+        <a href="https://doi.org/10.1103/PhysRevLett.1.181" target="_blank">doi:10.1103/PhysRevLett.1.181</a>
+      </div>
+      <div class="cite-note">
+        Original proposal of the CRAND mechanism: galactic cosmic rays produce secondary neutrons in
+        the atmosphere, which then decay into protons that become trapped in the inner belt.
+        Confirmed observationally by Van Allen et al. and subsequent instruments.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ PHYSICS MODELS ═══ -->
+  <h2>Physics Models</h2>
+
+  <h3>Internal field</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">International Geomagnetic Reference Field: the fourteenth generation (IGRF-14)</div>
+      <div class="cite-authors">
+        Alken, P., Thébault, E., Beggan, C.D., et al. (2021 definitive model; IGRF-14 update 2024).
+        IAGA Division V Working Group V-MOD.
+        Published by NOAA NCEI.
+      </div>
+      <div class="cite-authors">
+        <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">
+          ncei.noaa.gov — IGRF product page
+        </a>
+        &nbsp;·&nbsp;
+        <a href="https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html" target="_blank">
+          IAGA V-MOD working group
+        </a>
+      </div>
+      <div class="cite-note">Degree/order 1–13 Gauss coefficients used directly.</div>
+    </div>
+
+  </div>
+
+  <h3>External field &amp; magnetosphere</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        A model of the near magnetosphere with a dawn-dusk asymmetry:
+        1. Mathematical structure
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (2002). <em>Journal of Geophysical Research</em>, 107(A8), 1179.
+        <a href="https://doi.org/10.1029/2001JA000486" target="_blank">doi:10.1029/2001JA000486</a>
+      </div>
+      <div class="cite-note">T01 model — current implementation. All field-line tracing uses T01.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A model of the near magnetosphere with a dawn-dusk asymmetry:
+        2. Parameterization and fitting to observations
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (2002). <em>Journal of Geophysical Research</em>, 107(A8), 1176.
+        <a href="https://doi.org/10.1029/2001JA000220" target="_blank">doi:10.1029/2001JA000220</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A magnetospheric magnetic field model with a warped tail current sheet (T89c)
+      </div>
+      <div class="cite-authors">
+        Tsyganenko, N.A. (1989). <em>Planetary and Space Science</em>, 37, 5–20.
+        Updated 1992 with dipole-tilt–dependent tail terms.
+      </div>
+      <div class="cite-note">T89c was the previous implementation; T01 is now used instead.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Magnetopause location under extreme solar wind conditions
+      </div>
+      <div class="cite-authors">
+        Shue, J.H., Song, P., Russell, C.T., Steinberg, J.T., Chao, J.K., Zastenker, G.,
+        Vaisberg, O.L., Kokubun, S., Singer, H.J., Detman, T.R., &amp; Kawano, H. (1998).
+        <em>Journal of Geophysical Research</em>, 103(A8), 17691–17700.
+        <a href="https://doi.org/10.1029/98JA01103" target="_blank">doi:10.1029/98JA01103</a>
+      </div>
+      <div class="cite-note">Magnetopause standoff and flaring angle formula used in this app.</div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        A new functional form to study the solar wind control of the magnetopause
+        size and shape
+      </div>
+      <div class="cite-authors">
+        Shue, J.H., Chao, J.K., Fu, H.C., Russell, C.T., Song, P., Khurana, K.K.,
+        &amp; Singer, H.J. (1997).
+        <em>Journal of Geophysical Research</em>, 102(A5), 9497–9511.
+        <a href="https://doi.org/10.1029/97JA00196" target="_blank">doi:10.1029/97JA00196</a>
+      </div>
+    </div>
+
+  </div>
+
+  <h3>Storm-history indices (G1, G2)</h3>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">
+        Solar wind parameters for magnetospheric magnetic field modeling
+      </div>
+      <div class="cite-authors">
+        Qin, Z., Denton, R.E., Tsyganenko, N.A., &amp; Wolf, S. (2007).
+        <em>Space Weather</em>, 5, S11003.
+        <a href="https://doi.org/10.1029/2006SW000296" target="_blank">doi:10.1029/2006SW000296</a>
+      </div>
+      <div class="cite-note">
+        Defines the G1 and G2 disturbance indices used by T01.
+        Pre-computed hourly values are loaded from the Qin-Denton database.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ DATA SOURCES ═══ -->
+  <h2>Data Sources</h2>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">OMNI2 Low-Resolution Solar Wind Data</div>
+      <div class="cite-authors">
+        King, J.H., &amp; Papitashvili, N.E. (2005).
+        "Solar wind spatial scales in and comparisons of hourly Wind and ACE plasma
+        and magnetic field data."
+        <em>Journal of Geophysical Research</em>, 110, A02104.
+        <a href="https://doi.org/10.1029/2004JA010649" target="_blank">doi:10.1029/2004JA010649</a>
+      </div>
+      <div class="cite-authors">
+        Archive: <a href="https://spdf.gsfc.nasa.gov/pub/data/omni/low_res_omni/" target="_blank">
+          spdf.gsfc.nasa.gov — OMNI hourly
+        </a>
+        &nbsp;·&nbsp;
+        <a href="https://omniweb.gsfc.nasa.gov/" target="_blank">omniweb.gsfc.nasa.gov</a>
+      </div>
+      <div class="cite-note">
+        Provides solar wind speed, density, IMF By/Bz, and Dst from 1963 to present.
+        Merged from multiple L1 spacecraft (ACE, Wind, DSCOVR, IMP-8).
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Qin-Denton Hourly Database (G1, G2)
+        via <em>QinDenton</em> Fortran tool
+      </div>
+      <div class="cite-authors">
+        Weigel, R. (2024). <em>QinDenton</em> — Fortran tool to compute Qin-Denton
+        parameters from OMNI2 source data.
+        <a href="https://github.com/rweigel/QinDenton" target="_blank">
+          github.com/rweigel/QinDenton
+        </a>
+      </div>
+      <div class="cite-note">
+        Used to produce <code>WGhour.d</code>, the local source file for G1/G2 and all
+        other solar wind parameters covering 1963 to the present. The output is
+        pre-processed into monthly JSON files by
+        <code>scripts/convert-solarwind.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">IGRF-14 Gauss Coefficients</div>
+      <div class="cite-authors">
+        National Centers for Environmental Information (NOAA NCEI) / IAGA V-MOD.
+        <a href="https://www.ncei.noaa.gov/products/international-geomagnetic-reference-field" target="_blank">
+          ncei.noaa.gov
+        </a>
+      </div>
+      <div class="cite-note">
+        Degree-13 spherical harmonic coefficients for the 2025.0 epoch.
+        Pre-processed into <code>public/data/igrf14coeffs.json</code>
+        by <code>scripts/convert-igrf.js</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">NASA Blue Marble — Earth surface texture</div>
+      <div class="cite-authors">
+        NASA/Goddard Space Flight Center.
+        <a href="https://visibleearth.nasa.gov/collection/1484/blue-marble" target="_blank">
+          visibleearth.nasa.gov
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══ SOFTWARE ═══ -->
+  <h2>Software &amp; Libraries</h2>
+  <div class="cites">
+
+    <div class="cite">
+      <div class="cite-title">Three.js — 3D WebGL rendering</div>
+      <div class="cite-authors">
+        Cabello, R. (mrdoob) et al. MIT License.
+        <a href="https://threejs.org/" target="_blank">threejs.org</a>
+      </div>
+      <div class="cite-note">
+        Used for the WebGL render loop, TubeGeometry field lines,
+        CatmullRomCurve3 smoothing, marching-cubes isosurfaces, and
+        MeshPhysicalMaterial for semi-transparent belts and magnetopause.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">geopack — Python port of Tsyganenko's Fortran code</div>
+      <div class="cite-authors">
+        Tian, S. (tsssss). MIT License.
+        <a href="https://github.com/tsssss/geopack" target="_blank">
+          github.com/tsssss/geopack
+        </a>
+      </div>
+      <div class="cite-note">
+        Used as the implementation reference for the JavaScript ports of both T89c
+        (<code>src/physics/t89.js</code>) and T01 (<code>src/physics/t01.js</code>).
+        Tsyganenko's original Fortran remains the authoritative source; this Python
+        port was used to verify the ported logic against known outputs.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Vite — build tool and dev server</div>
+      <div class="cite-authors">
+        You, E. et al. MIT License.
+        <a href="https://vitejs.dev/" target="_blank">vitejs.dev</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">lil-gui — control panel</div>
+      <div class="cite-authors">
+        Brower, G.M. MIT License.
+        <a href="https://lil-gui.georgealways.com/" target="_blank">lil-gui.georgealways.com</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Vitest — test framework</div>
+      <div class="cite-authors">
+        Sheremet, V. et al. MIT License.
+        <a href="https://vitest.dev/" target="_blank">vitest.dev</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>
+      MagRad-CG is an open scientific visualization project.
+      All field-line computation runs client-side in JavaScript.
+      Source code available at
+      <a href="https://github.com/" target="_blank">GitHub</a>.
+    </p>
+    <p style="margin-top:8px; color: #445566;">
+      Physics models and data are reproduced for educational and research purposes.
+      G1/G2 computation based on the Qin-Denton formula as implemented by the
+      <em>QinDenton</em> tool (Weigel 2024), derived from NASA OMNI2.
+    </p>
+    <p style="margin-top:12px;">
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license">
+        <img src="https://img.shields.io/badge/License-CC%20BY%204.0-lightblue.svg"
+             alt="License: CC BY 4.0" style="vertical-align: middle;">
+      </a>
+      &nbsp; &copy; 2025 Andrew P. E. Collins — licensed under
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>.
+    </p>
+  </footer>
+
+</body>
+</html>
