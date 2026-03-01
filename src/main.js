@@ -24,8 +24,10 @@ import {
   disposeRadiationBeltGroup,
   updateBeltClipping,
   updateBeltOpacity,
+  updateBeltFlux,
   BELT_DEFINITIONS,
 } from './scene/radiationBelts.js';
+import { computeKp, computeBeltFlux } from './physics/beltFlux.js';
 import { createClippingPlanes } from './scene/clippingPlanes.js';
 import { createSatelliteMarker } from './scene/satelliteMarker.js';
 import { geographicToPhysicsPosition } from './physics/satellitePosition.js';
@@ -438,6 +440,8 @@ let isosurfaceGroup = null;
 
 // --- Radiation belt state ---
 let radiationBeltGroup = null;
+// Smoothed belt flux — lerped each frame so belt brightness changes are gradual.
+let currentBeltFlux = { innerFlux: 0.65, outerFlux: 0.1, slotFlux: 0.0 };
 
 /**
  * Grid bounds in scene coordinates.
@@ -1069,6 +1073,20 @@ function animate(now) {
 
   if (particleSystem) particleSystem.update(dt, getSolarWindParams(), params.particles, timeline?.getSpeed() ?? 1);
   if (auroraRenderer) auroraRenderer.update(now / 1000, params.dst, params.aurora);
+
+  // Belt flux encoding: smoothly modulate isosurface brightness/color by Kp/Dst.
+  // Runs every frame (cheap pure math + a few material writes) when belts are visible.
+  if (radiationBeltGroup && (params.showInnerBelt || params.showOuterBelt)) {
+    const swParams = getSolarWindParams();
+    const kp = computeKp(swParams);
+    const dst = swParams?.dst ?? params.dst;
+    const target = computeBeltFlux(kp, dst);
+    const alpha = 0.02; // ~3 s time constant at 60 fps
+    currentBeltFlux.innerFlux += alpha * (target.innerFlux - currentBeltFlux.innerFlux);
+    currentBeltFlux.outerFlux += alpha * (target.outerFlux - currentBeltFlux.outerFlux);
+    currentBeltFlux.slotFlux  += alpha * (target.slotFlux  - currentBeltFlux.slotFlux);
+    updateBeltFlux(radiationBeltGroup, currentBeltFlux, params.beltOpacity);
+  }
 
   controls.update();
   renderer.render(scene, camera);

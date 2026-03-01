@@ -101,17 +101,102 @@ export function injectionRate(dst) {
 }
 
 /**
- * Target L-shell range for particle injection based on Dst.
- * During storms, high-energy particles are injected at lower L (ring current).
+ * Target L-shell range for outer belt electron injection based on Dst.
+ * During storms, electrons are injected at lower L (ring current compression).
  *
  * @param {number} dst Dst index in nT
  * @returns {{ lMin: number, lMax: number }}
  */
-export function injectionLRange(dst) {
+export function outerBeltLRange(dst) {
   if (dst >= -20)  return { lMin: 3.5, lMax: 5.5 };
   if (dst >= -50)  return { lMin: 3.0, lMax: 5.0 };
   if (dst >= -150) return { lMin: 2.5, lMax: 4.5 };
   return                   { lMin: 2.0, lMax: 4.0 };
+}
+
+/**
+ * Injection rate for inner belt electrons (constant slow trickle).
+ *
+ * Inner belt electrons originate from inward radial diffusion from the outer belt,
+ * not from CRAND or storm-time injection. The population is relatively stable but
+ * smaller than the proton population. Source is azimuthally uniform.
+ *
+ * @returns {number} Injection rate in particles/real-second (constant)
+ */
+export function innerBeltElectronRate() {
+  return 2.0;
+}
+
+/**
+ * L-shell range for inner belt electrons.
+ *
+ * Electrons diffuse inward from the outer belt and accumulate primarily in the
+ * outer portion of the inner belt (L = 1.5–2.0). The deep inner belt (L < 1.5)
+ * is strongly proton-dominated; electron diffusion barely reaches there.
+ *
+ * @returns {{ lMin: number, lMax: number }}
+ */
+export function innerBeltElectronLRange() {
+  return { lMin: 1.5, lMax: 2.0 };
+}
+
+/**
+ * L-shell range for ring current proton injection.
+ *
+ * The ring current (L = 2–6) contains protons at 10–300 keV injected from the
+ * nightside plasma sheet during storms — the same mechanism as outer belt electron
+ * injection but producing the dominant energy carriers of the ring current.
+ * During storms the ring current compresses inward, matching the electron belt.
+ *
+ * @param {number} dst Dst index in nT
+ * @returns {{ lMin: number, lMax: number }}
+ */
+export function ringCurrentLRange(dst) {
+  if (dst >= -20)  return { lMin: 2.5, lMax: 4.5 };
+  if (dst >= -50)  return { lMin: 2.0, lMax: 4.0 };
+  if (dst >= -150) return { lMin: 1.8, lMax: 3.5 };
+  return                   { lMin: 1.5, lMax: 3.0 };
+}
+
+/**
+ * CRAND (Cosmic Ray Albedo Neutron Decay) inner belt proton injection rate.
+ *
+ * Galactic cosmic rays strike the upper atmosphere and produce neutrons, which
+ * decay in flight: n → p + e⁻ + ν̄ₑ. The resulting protons are trapped in the
+ * inner belt. This is a continuous, azimuthally uniform source that is
+ * independent of solar wind activity (on the timescales we simulate).
+ *
+ * @returns {number} Injection rate in particles/real-second (constant)
+ */
+export function crandInjectionRate() {
+  return 4.0;
+}
+
+/**
+ * L-shell range for inner belt proton injection (CRAND source).
+ * Always L = 1.2–2.0 regardless of Dst — inner belt protons do not compress
+ * significantly during geomagnetic storms on the timescales we simulate.
+ *
+ * @returns {{ lMin: number, lMax: number }}
+ */
+export function innerBeltLRange() {
+  return { lMin: 1.2, lMax: 2.0 };
+}
+
+/**
+ * Visual loss lifetime (real seconds) for inner belt protons.
+ *
+ * Real inner belt proton lifetimes are years (very stable, CRAND-sustained).
+ * We use 300–600 visual seconds to keep a visually stable inner belt that
+ * contrasts clearly with the much shorter outer belt electron lifetimes (25–45 s).
+ * Longer at lower L (deeper magnetic trapping), shorter near L = 2.0.
+ *
+ * @param {number} L McIlwain L-shell (1.2 ≤ L ≤ 2.0)
+ * @returns {number} Lifetime in real-seconds
+ */
+export function innerBeltLifetime(L) {
+  // L=1.2 → 600 s;  L=2.0 → 300 s  (linear interpolation)
+  return 600 - ((L - 1.2) / 0.8) * 300;
 }
 
 /**

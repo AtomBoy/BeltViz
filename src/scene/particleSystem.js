@@ -13,19 +13,48 @@
  *   - Bounce motion (N–S along field lines) is represented by a static spread
  *     in lambdaM up to the mirror latitude — not animated, since drift is the
  *     physically meaningful ring-current motion.
- *   - Dst from solar wind data drives injection rate and target L-range.
- *   - Loss is modelled as a first-order decay with L-dependent lifetime.
+ *
+ * Four physically distinct populations are simulated:
+ *
+ *   (A) Inner belt protons (L = 1.2–2.0) — CRAND source:
+ *     Cosmic Ray Albedo Neutron Decay: galactic cosmic rays hit the upper
+ *     atmosphere → neutrons → decay to protons in flight. Source is constant,
+ *     azimuthally uniform, and independent of solar wind. Drift WESTWARD.
+ *     Long-lived (300–600 s visual). Orange.
+ *
+ *   (B) Inner belt electrons (L = 1.5–2.0) — inward diffusion:
+ *     Electrons diffuse inward from the outer belt and accumulate in the outer
+ *     portion of the inner belt. Constant slow trickle, azimuthally uniform.
+ *     Drift EASTWARD — visibly faster than the colocated protons.
+ *     Moderate lifetime (~120 s visual). Blue.
+ *     Combined with (A), the inner belt appears warm-white from additive mixing.
+ *
+ *   (C) Outer belt electrons (L = 3.0–6.0) — storm injection:
+ *     Electrons injected from the nightside plasma sheet during substorms and
+ *     storms. Rate and L-range driven by Dst. Short-lived (25–45 s). Blue.
+ *
+ *   (D) Ring current protons (L = 1.5–4.5) — storm injection:
+ *     Protons injected alongside electrons from the nightside plasma sheet.
+ *     The ring current (which CAUSES the Dst depression we measure) is primarily
+ *     carried by these 10–300 keV protons. Representative energy 10 MeV used
+ *     for visual drift rates. Nightside injection, Dst-driven. Drift WESTWARD.
+ *     Moderate lifetime (~35–45 s). Orange.
+ *
+ *   Slot region (L = 2.0–3.0) is normally empty of ELECTRONS. Protons can
+ *   exist in the slot — only electrons are blocked there until extreme storms.
  *
  * Visual time scale:
  *   VISUAL_DRIFT_SCALE converts physics drift rates (rad/sim-second) to
  *   visual rates (rad/real-second). Calibrated so electrons at L=4, E=1 MeV
- *   complete one orbit in ~10 real seconds regardless of the sim time scale.
+ *   complete one orbit in ~2.5 min regardless of the sim time scale.
  */
 
 import * as THREE from 'three';
 import {
   ELECTRON, PROTON,
-  driftRate, injectionRate, injectionLRange,
+  driftRate, injectionRate,
+  outerBeltLRange, crandInjectionRate, innerBeltLRange, innerBeltLifetime,
+  innerBeltElectronRate, innerBeltElectronLRange, ringCurrentLRange,
 } from '../physics/particleDrift.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -36,48 +65,106 @@ const MAX_PARTICLES = 2000;
 // Visual target: ~2.5 min per orbit → scale = 945 / 150 = 6.3
 const VISUAL_DRIFT_SCALE = 6.3;
 
-// Baseline new particles per real second at quiet conditions (Dst ≥ −20 nT).
-// After the initial burst this tops up the pool gradually.
+// Baseline outer belt electrons per real second at quiet conditions (Dst ≥ −20 nT).
 const BASE_INJECT_RATE = 20;
 
-// On first enable, inject this fraction of maxCount immediately so particles
-// appear right away rather than trickling in over many seconds.
-const BURST_FRACTION = 0.35;
+// Ring current proton base rate: ~20% of outer electron rate.
+// Ring current protons coexist with outer electrons, slightly weighted lower.
+const BASE_RING_CURRENT_RATE = 4;
+
+// On first enable, inject these fractions of maxCount immediately.
+const BURST_CRAND_PROTON    = 0.20; // inner belt protons (CRAND)
+const BURST_INNER_ELECTRON  = 0.07; // inner belt electrons (diffusion)
+const BURST_OUTER_ELECTRON  = 0.30; // outer belt electrons (storm)
+const BURST_RING_PROTON     = 0.05; // ring current protons
 
 // Birth flash: new particles briefly glow bright to mark their injection point.
-// Flash fades linearly over FLASH_DURATION seconds.
 const FLASH_DURATION = 3.0;  // seconds
 const FLASH_PEAK     = 5.0;  // additional brightness multiplier at birth (so 6× base)
 
-// Loss lifetimes in real seconds (tuned for aesthetics).
-// Shorter at outer L shells; inner belt is very long-lived.
-function realLifetime(L) {
-  if (L < 2) return 90;   // inner belt — slow loss
-  if (L < 4) return 45;   // outer belt main body
-  return 25;               // outer belt fringe — fast loss
+// Slot region protection for ELECTRONS only.
+// Real slot (L = 2–3) is empty of electrons in quiet conditions; protons exist freely.
+const SLOT_L_MIN = 2.0;
+const SLOT_L_MAX = 3.0;
+const SLOT_DST_THRESHOLD = -100; // nT — slot fills with electrons below this Dst
+
+// Representative energies for each population.
+// CRAND protons: 30 MeV (high-energy inner belt protons from cosmic-ray cascade).
+// Inner electrons: 1 MeV (similar to outer belt electrons — diffuse inward without energy loss).
+// Ring current protons: 10 MeV representative for visual drift rates.
+//   (Real ring current protons are 10–300 keV — too low-energy to drift perceptibly
+//    at these visual scales, so we use a higher representative energy that preserves
+//    the qualitative physics: protons drift westward, more slowly than electrons.)
+const CRAND_PROTON_ENERGY_MEV        = 30;
+const INNER_ELECTRON_ENERGY_MEV      = 1.0;
+const RING_CURRENT_PROTON_ENERGY_MEV = 10;
+
+// Visual lifetime for inner belt electrons and ring current protons.
+// Inner electrons: moderate (longer than outer electrons, shorter than CRAND protons).
+const INNER_ELECTRON_LIFETIME = 120; // seconds
+
+// Representative mean lifetimes for budget computation (Little's Law: N_steady = rate × τ).
+// These are averages across each population's L-range, used only for budget allocation.
+const AVG_CRAND_LIFETIME          = 450; // innerBeltLifetime midpoint at L ≈ 1.6
+const AVG_INNER_ELECTRON_LIFETIME = 120; // equals INNER_ELECTRON_LIFETIME (constant)
+const AVG_OUTER_ELECTRON_LIFETIME =  35; // mix: 45s (L < 4) + 25s (L ≥ 4)
+const AVG_RING_PROTON_LIFETIME    =  40; // skewed lower-L vs outer electrons → slightly longer
+
+// Particle colours by species (additive-blend friendly)
+const COL_ELECTRON = new THREE.Color(0x3399ff); // blue-white (electrons)
+const COL_PROTON   = new THREE.Color(0xff6622); // orange-red (protons)
+
+// ─── Budget computation (Little's Law) ────────────────────────────────────────
+
+/**
+ * Compute per-population particle budget for the current solar wind conditions.
+ *
+ * At steady state N_i = rate_i × τ_i (Little's Law). Each population's share of
+ * maxCount is proportional to this weight. Budgets always sum exactly to maxCount.
+ *
+ * When showProtons or showElectrons is false, those populations get zero budget;
+ * the remaining species expand to fill the pool proportionally.
+ *
+ * @param {number} maxCount       Total particle pool size for this frame
+ * @param {number} dst            Dst index in nT (drives outer injection rates)
+ * @param {boolean} showElectrons Whether electron populations (B, C) are enabled
+ * @param {boolean} showProtons   Whether proton populations (A, D) are enabled
+ * @returns {{ budgetA, budgetB, budgetC, budgetD }}
+ */
+function computeBudgets(maxCount, dst, showElectrons, showProtons) {
+  const mult = injectionRate(dst);
+  const wA = showProtons   ? crandInjectionRate()          * AVG_CRAND_LIFETIME          : 0;
+  const wB = showElectrons ? innerBeltElectronRate()       * AVG_INNER_ELECTRON_LIFETIME : 0;
+  const wC = showElectrons ? mult * BASE_INJECT_RATE       * AVG_OUTER_ELECTRON_LIFETIME : 0;
+  const wD = showProtons   ? mult * BASE_RING_CURRENT_RATE * AVG_RING_PROTON_LIFETIME    : 0;
+  const total = wA + wB + wC + wD;
+  if (total === 0) return { budgetA: 0, budgetB: 0, budgetC: 0, budgetD: 0 };
+  const budgetA = Math.floor(maxCount * wA / total);
+  const budgetB = Math.floor(maxCount * wB / total);
+  const budgetD = Math.floor(maxCount * wD / total);
+  // C gets the remainder so budgets sum exactly to maxCount (no rounding gap).
+  const budgetC = Math.max(0, maxCount - budgetA - budgetB - budgetD);
+  return { budgetA, budgetB, budgetC, budgetD };
 }
 
-// Default proton energy for the 'both' species mode.
-const PROTON_ENERGY_MEV = 30;
+// ─── Lifetime helpers ─────────────────────────────────────────────────────────
 
-// Particle colours by species (additive-blend friendly — stay dim individually)
-const COL_ELECTRON = new THREE.Color(0x3399ff); // blue-white
-const COL_PROTON   = new THREE.Color(0xff6622); // orange-red
+function outerBeltRealLifetime(L) {
+  if (L < 4) return 45;
+  return 25;
+}
 
 // ─── GLSL Shaders ─────────────────────────────────────────────────────────────
 
 const VERTEX_SHADER = /* glsl */`
   attribute vec3 particleColor;
   varying   vec3 vColor;
-  uniform   float uDPR; // device pixel ratio — ensures 1 CSS pixel minimum on Retina
+  uniform   float uDPR;
 
   void main() {
     vColor = particleColor;
     vec4 mvPos  = modelViewMatrix * vec4(position, 1.0);
     float dist  = max(-mvPos.z, 0.01);
-    // Size in CSS pixels, scaled to framebuffer pixels by uDPR.
-    // At default zoom (dist ≈ 11 Re) → ~7.5 CSS px; zoomed in (dist ≈ 4) → ~14 CSS px.
-    // Minimum 4.5 CSS px ensures the circular soft edge is visible at any zoom.
     gl_PointSize = clamp(15.0 / (dist * 0.18 + 0.05), 4.5, 27.0) * uDPR;
     gl_Position  = projectionMatrix * mvPos;
   }
@@ -87,7 +174,6 @@ const FRAGMENT_SHADER = /* glsl */`
   varying vec3 vColor;
 
   void main() {
-    // Radial distance from point centre (0 = centre, 1 = edge).
     float d     = length(gl_PointCoord - vec2(0.5)) * 2.0;
     if (d > 1.0) discard;
     float alpha = pow(1.0 - d, 1.6);
@@ -98,30 +184,26 @@ const FRAGMENT_SHADER = /* glsl */`
 // ─── createParticleSystem ─────────────────────────────────────────────────────
 
 /**
- * Create and return a particle system.
- *
  * @param {THREE.Scene} scene
  * @returns {{ mesh: THREE.Points, update: Function, dispose: Function }}
  */
 export function createParticleSystem(scene) {
   // ── CPU-side particle state ─────────────────────────────────────────────────
-  const pL         = new Float32Array(MAX_PARTICLES); // L-shell
-  const pPhi       = new Float32Array(MAX_PARTICLES); // azimuthal angle (rad)
-  const pLambdaM   = new Float32Array(MAX_PARTICLES); // bounce latitude (rad) — stored for reference only
-  const pDriftRate = new Float32Array(MAX_PARTICLES); // visual drift rate (rad/real-s)
-  const pLifetime  = new Float32Array(MAX_PARTICLES); // real-second e-fold lifetime
-  const pAge       = new Float32Array(MAX_PARTICLES); // seconds since injection (for flash)
-  const pAlive     = new Uint8Array(MAX_PARTICLES);   // 0 = dead slot
-  // Precomputed lambdaM-dependent constants (set at inject time, constant for particle lifetime):
-  //   pRCosL[i]  = L × cos³(λ_m)          — x,z position multiplier
-  //   pYConst[i] = L × cos²(λ_m) × sin(λ_m) — y position (invariant)
-  // Reduces per-frame trig from 4 calls to 2 (only cos/sin of phi needed each frame).
-  const pRCosL  = new Float32Array(MAX_PARTICLES);
-  const pYConst = new Float32Array(MAX_PARTICLES);
+  const pL         = new Float32Array(MAX_PARTICLES);
+  const pPhi       = new Float32Array(MAX_PARTICLES);
+  const pLambdaM   = new Float32Array(MAX_PARTICLES);
+  const pDriftRate = new Float32Array(MAX_PARTICLES);
+  const pLifetime  = new Float32Array(MAX_PARTICLES);
+  const pAge       = new Float32Array(MAX_PARTICLES);
+  const pAlive     = new Uint8Array(MAX_PARTICLES);
+  const pPop       = new Uint8Array(MAX_PARTICLES); // population: 0=A, 1=B, 2=C, 3=D
+  // Precomputed lambdaM constants — reduces per-frame trig from 4 to 2 calls.
+  const pRCosL  = new Float32Array(MAX_PARTICLES); // L × cos³(λ_m)
+  const pYConst = new Float32Array(MAX_PARTICLES); // L × cos²(λ_m) × sin(λ_m)
 
   // ── GPU attribute arrays ────────────────────────────────────────────────────
-  const posArr = new Float32Array(MAX_PARTICLES * 3); // x,y,z scene units
-  const colArr = new Float32Array(MAX_PARTICLES * 3); // r,g,b [0-1]
+  const posArr = new Float32Array(MAX_PARTICLES * 3);
+  const colArr = new Float32Array(MAX_PARTICLES * 3);
 
   const geometry = new THREE.BufferGeometry();
   const posAttr  = new THREE.BufferAttribute(posArr, 3);
@@ -131,100 +213,140 @@ export function createParticleSystem(scene) {
   geometry.setAttribute('position', posAttr);
   geometry.setAttribute('particleColor', colAttr);
   geometry.setDrawRange(0, MAX_PARTICLES);
-  // Pre-set bounding sphere so Three.js never auto-computes it from particle data.
-  // Outer belt max L ≈ 5.5 Re; 7 Re gives a safe margin.
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 7);
 
   const material = new THREE.ShaderMaterial({
     vertexShader:   VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
-    uniforms: {
-      uDPR: { value: window.devicePixelRatio ?? 1 },
-    },
-    transparent:    true,
-    depthWrite:     false,
-    blending:       THREE.AdditiveBlending,
-    // The custom color attribute is named 'particleColor' (not 'color') because
-    // Three.js r163+ reserves the 'color' attribute name internally and will not
-    // bind it as a custom attribute even without vertexColors: true.
+    uniforms: { uDPR: { value: window.devicePixelRatio ?? 1 } },
+    transparent: true,
+    depthWrite:  false,
+    blending:    THREE.AdditiveBlending,
   });
 
   const mesh = new THREE.Points(geometry, material);
-  mesh.frustumCulled = false; // particles are always within view
+  mesh.frustumCulled = false;
   scene.add(mesh);
 
-  let aliveCount  = 0;
-  let injectAccum = 0;    // fractional injection accumulator
-  let wasEnabled  = false; // tracks enable transition for burst injection
-  let nextFreeHint = 0;   // linear scan hint — avoids O(n) from slot 0 every time
+  let aliveCount        = 0;
+  let aliveA            = 0; // (A) CRAND protons
+  let aliveB            = 0; // (B) inner belt electrons
+  let aliveC            = 0; // (C) outer belt electrons
+  let aliveD            = 0; // (D) ring current protons
+  let innerProtonAccum  = 0; // (A) CRAND inner belt protons
+  let innerElectronAccum= 0; // (B) inner belt electrons
+  let outerElectronAccum= 0; // (C) outer belt electrons
+  let outerProtonAccum  = 0; // (D) ring current protons
+  let wasEnabled        = false;
+  let nextFreeHint      = 0;
 
-  // ── inject: place one new particle ─────────────────────────────────────────
+  // ── Shared slot finder ──────────────────────────────────────────────────────
 
-  function inject(speciesCode, energyMeV, lMin, lMax, sunLonRad = 0) {
-    // Find a dead slot, starting from where we left off.
-    let slot = -1;
+  function findSlot() {
     for (let i = 0; i < MAX_PARTICLES; i++) {
       const idx = (nextFreeHint + i) % MAX_PARTICLES;
-      if (!pAlive[idx]) { slot = idx; nextFreeHint = (idx + 1) % MAX_PARTICLES; break; }
+      if (!pAlive[idx]) { nextFreeHint = (idx + 1) % MAX_PARTICLES; return idx; }
     }
-    if (slot === -1) return; // pool full
+    return -1;
+  }
 
-    const L = lMin + Math.random() * (lMax - lMin);
-    // Inject from the nightside (midnight sector ± 90°).
-    // Real storm injection occurs when magnetotail plasma-sheet particles are
-    // driven inward on the nightside — centred on the anti-solar direction.
-    // phi=0 is subsolar; sun sits at phi_sun = -sunLonRad, so nightside = π - sunLonRad.
-    const nightsidePhi = Math.PI - sunLonRad;
-    const phi = nightsidePhi + (Math.random() - 0.5) * Math.PI;
-    // Spread bounce latitude along field line, mostly near equator.
-    // Mirror latitude (dipole) ≈ arccos(1/√L).
+  // ── Shared low-level injector ───────────────────────────────────────────────
+
+  function placeParticle(slot, L, phi, speciesCode, energyMeV, lifetime, col, pop) {
     const maxLambda = Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.65;
     const lambdaM   = (Math.random() - 0.5) * 2 * maxLambda;
-
-    const rate = driftRate(L, energyMeV, speciesCode) * VISUAL_DRIFT_SCALE;
-    const life = realLifetime(L);
-
-    // Precompute lambdaM constants (these never change for this particle).
-    const cosLM   = Math.cos(lambdaM);
-    const rEq     = L * cosLM * cosLM;
+    const rate      = driftRate(L, energyMeV, speciesCode) * VISUAL_DRIFT_SCALE;
+    const cosLM     = Math.cos(lambdaM);
+    const rEq       = L * cosLM * cosLM;
 
     pL[slot]         = L;
     pPhi[slot]       = phi;
     pLambdaM[slot]   = lambdaM;
-    pRCosL[slot]     = rEq * cosLM;           // L × cos³(λ_m)
-    pYConst[slot]    = rEq * Math.sin(lambdaM); // L × cos²(λ_m) × sin(λ_m)
+    pRCosL[slot]     = rEq * cosLM;
+    pYConst[slot]    = rEq * Math.sin(lambdaM);
     pDriftRate[slot] = rate;
-    pLifetime[slot]  = life;
-    pAge[slot]       = 0;     // reset age so flash fires on birth
+    pLifetime[slot]  = lifetime;
+    pAge[slot]       = 0;
     pAlive[slot]     = 1;
+    pPop[slot]       = pop;
     aliveCount++;
+    if      (pop === 0) aliveA++;
+    else if (pop === 1) aliveB++;
+    else if (pop === 2) aliveC++;
+    else                aliveD++;
 
-    // Base colour — will be overwritten each frame by the drift loop with flash.
-    const col = speciesCode === ELECTRON ? COL_ELECTRON : COL_PROTON;
     colArr[slot * 3]     = col.r;
     colArr[slot * 3 + 1] = col.g;
     colArr[slot * 3 + 2] = col.b;
   }
 
-  // Pick a species code based on which populations are enabled.
-  function pickSpecies(showElectrons, showProtons) {
-    if (showElectrons && showProtons) return Math.random() < 0.5 ? ELECTRON : PROTON;
-    if (showElectrons) return ELECTRON;
-    return PROTON; // showProtons only (caller guards against both false)
+  // ── (A) Inner belt CRAND protons ────────────────────────────────────────────
+
+  function injectInner() {
+    const slot = findSlot();
+    if (slot === -1) return;
+    const { lMin, lMax } = innerBeltLRange();
+    const L   = lMin + Math.random() * (lMax - lMin);
+    const phi = Math.random() * Math.PI * 2; // uniform — CRAND is azimuthally symmetric
+    placeParticle(slot, L, phi, PROTON, CRAND_PROTON_ENERGY_MEV, innerBeltLifetime(L), COL_PROTON, 0);
+  }
+
+  // ── (B) Inner belt electrons — inward diffusion ─────────────────────────────
+
+  function injectInnerElectron() {
+    const slot = findSlot();
+    if (slot === -1) return;
+    const { lMin, lMax } = innerBeltElectronLRange();
+    const L   = lMin + Math.random() * (lMax - lMin);
+    const phi = Math.random() * Math.PI * 2; // uniform — diffusion is azimuthally symmetric
+    placeParticle(slot, L, phi, ELECTRON, INNER_ELECTRON_ENERGY_MEV, INNER_ELECTRON_LIFETIME, COL_ELECTRON, 1);
+  }
+
+  // ── (C) Outer belt electrons — storm injection ──────────────────────────────
+
+  function injectOuter(energyMeV, sunLonRad, dst) {
+    const { lMin, lMax } = outerBeltLRange(dst);
+    const L = lMin + Math.random() * (lMax - lMin);
+
+    // Slot protection: electrons are excluded from L = 2.0–3.0 during moderate conditions.
+    // Baker et al. (2004): slot fills via inward diffusion only in extreme storms.
+    if (L >= SLOT_L_MIN && L <= SLOT_L_MAX && dst > SLOT_DST_THRESHOLD) return;
+
+    const slot = findSlot();
+    if (slot === -1) return;
+
+    // Nightside injection (anti-solar direction ± 90°).
+    const phi = (Math.PI - sunLonRad) + (Math.random() - 0.5) * Math.PI;
+    placeParticle(slot, L, phi, ELECTRON, energyMeV, outerBeltRealLifetime(L), COL_ELECTRON, 2);
+  }
+
+  // ── (D) Ring current protons — storm injection ──────────────────────────────
+
+  function injectOuterProton(sunLonRad, dst) {
+    const { lMin, lMax } = ringCurrentLRange(dst);
+    const L = lMin + Math.random() * (lMax - lMin);
+    // No slot guard — protons can freely occupy the slot region.
+
+    const slot = findSlot();
+    if (slot === -1) return;
+
+    // Same nightside injection as electrons: plasma sheet injects both species.
+    const phi = (Math.PI - sunLonRad) + (Math.random() - 0.5) * Math.PI;
+    placeParticle(slot, L, phi, PROTON, RING_CURRENT_PROTON_ENERGY_MEV, outerBeltRealLifetime(L), COL_PROTON, 3);
   }
 
   // ── update: called every frame ──────────────────────────────────────────────
 
   /**
-   * @param {number} dt            Real elapsed time since last frame (seconds, capped at 0.1)
-   * @param {object|null} swParams Solar wind params (may be null if disabled)
-   * @param {object} pParams       params.particles { enabled, showElectrons, showProtons, count, energyMeV }
-   * @param {number} [playSpeed]   Current timeline playback speed (sim-s per real-s). Default 1.
+   * @param {number} dt            Real elapsed time since last frame (seconds, capped 0.1)
+   * @param {object|null} swParams Solar wind params (null if disabled)
+   * @param {object} pParams       { enabled, showElectrons, showProtons, count, energyMeV }
+   * @param {number} [playSpeed]   Timeline playback speed. Default 1.
    */
   function update(dt, swParams, pParams, playSpeed = 1) {
     if (!pParams.enabled) {
       mesh.visible = false;
-      wasEnabled = false; // reset so next enable gets a fresh burst
+      wasEnabled = false;
       return;
     }
     mesh.visible = true;
@@ -233,70 +355,101 @@ export function createParticleSystem(scene) {
     const sunLonRad     = swParams?.sunLonRad  ?? 0;
     const showElectrons = pParams.showElectrons ?? true;
     const showProtons   = pParams.showProtons   ?? true;
-    const canInject     = showElectrons || showProtons;
     const energy        = pParams.energyMeV ?? 1.0;
 
-    // Scale down particle count at high playback speeds to keep frame rate smooth.
-    // Field line rebuilds are expensive; fewer GPU uploads help during fast playback.
-    //   ≤ 60×  → full count
-    //   3600×  → 25%
-    //   86400× → 10%
-    const speedTier = playSpeed >= 86400 ? 0.10 : playSpeed >= 3600 ? 0.25 : 1.0;
-    const maxCount  = Math.max(50, Math.floor(Math.min(pParams.count ?? 800, MAX_PARTICLES) * speedTier));
+    const maxCount  = Math.max(50, Math.min(pParams.count ?? 800, MAX_PARTICLES));
 
-    // ── Burst injection on first enable ───────────────────────────────────
-    // Inject a fraction of maxCount immediately so particles are visible
-    // right away rather than trickling in over tens of seconds.
+    // ── Per-population budgets (Little's Law) ───────────────────────────────
+    // Each population's steady-state count = rate × mean_lifetime. Budgets are
+    // computed once per frame from current Dst and sum exactly to maxCount.
+    const { budgetA, budgetB, budgetC, budgetD } =
+      computeBudgets(maxCount, dst, showElectrons, showProtons);
+
+    // ── Burst on first enable ────────────────────────────────────────────────
     if (!wasEnabled) {
       wasEnabled = true;
-      if (canInject) {
-        const { lMin, lMax } = injectionLRange(dst);
-        const burstTarget = Math.floor(maxCount * BURST_FRACTION);
-        while (aliveCount < burstTarget) {
-          const sp = pickSpecies(showElectrons, showProtons);
-          const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-          inject(sp, E, lMin, lMax, sunLonRad);
-        }
+
+      if (showProtons) {
+        // (A) CRAND protons — pre-fill 20% of their budget
+        for (let n = 0; n < Math.floor(budgetA * BURST_CRAND_PROTON); n++) injectInner();
+        // (D) Ring current protons — pre-fill 5% of their budget
+        for (let n = 0; n < Math.floor(budgetD * BURST_RING_PROTON); n++) injectOuterProton(sunLonRad, dst);
       }
-      injectAccum = 0;
+      if (showElectrons) {
+        // (B) Inner belt electrons — pre-fill 7% of their budget
+        for (let n = 0; n < Math.floor(budgetB * BURST_INNER_ELECTRON); n++) injectInnerElectron();
+        // (C) Outer belt electrons — pre-fill 30% of their budget
+        for (let n = 0; n < Math.floor(budgetC * BURST_OUTER_ELECTRON); n++) injectOuter(energy, sunLonRad, dst);
+      }
+
+      innerProtonAccum = innerElectronAccum = outerElectronAccum = outerProtonAccum = 0;
     }
 
-    // ── Steady-state injection ─────────────────────────────────────────────
-    const rate = injectionRate(dst) * BASE_INJECT_RATE;
-    if (canInject) {
-      injectAccum += rate * dt;
-      while (injectAccum >= 1 && aliveCount < maxCount) {
-        injectAccum -= 1;
-        const { lMin, lMax } = injectionLRange(dst);
-        const sp = pickSpecies(showElectrons, showProtons);
-        const E  = sp === PROTON ? PROTON_ENERGY_MEV : energy;
-        inject(sp, E, lMin, lMax, sunLonRad);
+    // ── Steady-state injection ───────────────────────────────────────────────
+    // Each population injects only while below its own budget. findSlot() === -1
+    // is kept as a safety guard in case rounding produces a budget overshoot.
+
+    if (showProtons) {
+      // (A) CRAND protons — constant rate, independent of Dst
+      innerProtonAccum += crandInjectionRate() * dt;
+      while (innerProtonAccum >= 1 && aliveA < budgetA) {
+        innerProtonAccum -= 1;
+        injectInner();
       }
-      if (injectAccum > rate) injectAccum = 0; // pool full — reset accumulator
+      if (innerProtonAccum > crandInjectionRate()) innerProtonAccum = 0;
+
+      // (D) Ring current protons — storm-driven
+      const rcRate = injectionRate(dst) * BASE_RING_CURRENT_RATE;
+      outerProtonAccum += rcRate * dt;
+      while (outerProtonAccum >= 1 && aliveD < budgetD) {
+        outerProtonAccum -= 1;
+        injectOuterProton(sunLonRad, dst);
+      }
+      if (outerProtonAccum > rcRate) outerProtonAccum = 0;
     }
 
-    // ── Drift, ageing, loss ────────────────────────────────────────────────
-    // Track whether any GPU data changed this frame to avoid pointless uploads.
+    if (showElectrons) {
+      // (B) Inner belt electrons — constant trickle from inward diffusion
+      innerElectronAccum += innerBeltElectronRate() * dt;
+      while (innerElectronAccum >= 1 && aliveB < budgetB) {
+        innerElectronAccum -= 1;
+        injectInnerElectron();
+      }
+      if (innerElectronAccum > innerBeltElectronRate()) innerElectronAccum = 0;
+
+      // (C) Outer belt electrons — storm-driven, dominates during active periods
+      const outerRate = injectionRate(dst) * BASE_INJECT_RATE;
+      outerElectronAccum += outerRate * dt;
+      while (outerElectronAccum >= 1 && aliveC < budgetC) {
+        outerElectronAccum -= 1;
+        injectOuter(energy, sunLonRad, dst);
+      }
+      if (outerElectronAccum > outerRate) outerElectronAccum = 0;
+    }
+
+    // ── Drift, ageing, loss ──────────────────────────────────────────────────
     let dirtyPos = false;
     let dirtyCol = false;
 
     for (let i = 0; i < MAX_PARTICLES; i++) {
-      if (!pAlive[i]) continue; // dead slots stay at (0,0,0) from last zero-on-death
+      if (!pAlive[i]) continue;
 
-      // First-order decay: probability of loss this frame
       if (Math.random() < 1 - Math.exp(-dt / pLifetime[i])) {
         pAlive[i] = 0;
         aliveCount--;
+        const p = pPop[i];
+        if      (p === 0) aliveA--;
+        else if (p === 1) aliveB--;
+        else if (p === 2) aliveC--;
+        else              aliveD--;
         colArr[i * 3] = colArr[i * 3 + 1] = colArr[i * 3 + 2] = 0;
         posArr[i * 3] = posArr[i * 3 + 1] = posArr[i * 3 + 2] = 0;
         dirtyPos = dirtyCol = true;
         continue;
       }
 
-      // Advance azimuthal angle
       pPhi[i] = (pPhi[i] + pDriftRate[i] * dt) % (Math.PI * 2);
 
-      // Write GPU position using precomputed lambdaM constants (2 trig calls vs 4).
       const cosPhi = Math.cos(pPhi[i]);
       const sinPhi = Math.sin(pPhi[i]);
       posArr[i * 3]     =  pRCosL[i] * cosPhi;
@@ -304,11 +457,8 @@ export function createParticleSystem(scene) {
       posArr[i * 3 + 2] = -pRCosL[i] * sinPhi;
       dirtyPos = true;
 
-      // Birth flash: newly injected particles glow bright, fading to base colour.
       pAge[i] += dt;
-      const flash      = pAge[i] < FLASH_DURATION
-        ? FLASH_PEAK * (1 - pAge[i] / FLASH_DURATION)
-        : 0;
+      const flash      = pAge[i] < FLASH_DURATION ? FLASH_PEAK * (1 - pAge[i] / FLASH_DURATION) : 0;
       const brightness = 1.0 + flash;
       const baseCol    = pDriftRate[i] >= 0 ? COL_ELECTRON : COL_PROTON;
       colArr[i * 3]     = baseCol.r * brightness;
@@ -319,11 +469,10 @@ export function createParticleSystem(scene) {
 
     if (dirtyPos) {
       posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true; // upload colors on any frame with live particles (born or moved)
+      colAttr.needsUpdate = true;
     } else if (dirtyCol) {
-      colAttr.needsUpdate = true; // upload colors on death-only frames
+      colAttr.needsUpdate = true;
     }
-
   }
 
   // ── dispose ─────────────────────────────────────────────────────────────────

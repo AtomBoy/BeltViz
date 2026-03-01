@@ -123,6 +123,30 @@ function injectStyles() {
       padding: 2px 4px; font-size: 12px; cursor: pointer;
       flex-shrink: 0;
     }
+    #tl-legend {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 5px;
+      padding: 0 14px; flex-shrink: 0; width: 180px;
+      border-left: 1px solid rgba(100, 150, 200, 0.2);
+    }
+    #tl-legend-title {
+      font-size: 9.5px; color: #7799bb; letter-spacing: .03em;
+      white-space: nowrap; text-align: center;
+    }
+    #tl-legend-row {
+      display: flex; align-items: center; gap: 6px; width: 100%;
+    }
+    .tl-legend-end {
+      font-size: 9px; color: #556677; white-space: nowrap; flex-shrink: 0;
+    }
+    #tl-legend-gradient {
+      flex: 1; height: 7px; border-radius: 3px;
+      background: linear-gradient(to right,
+        rgb(0,40,120),
+        rgb(180,100,30),
+        rgb(210,20,20));
+      opacity: 0.85;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -173,6 +197,14 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
       <button class="tl-btn" id="tl-now" title="Jump to now">Now</button>
     </div>
     <div id="tl-bar"></div>
+    <div id="tl-legend">
+      <div id="tl-legend-title">Solar wind intensity · Dst</div>
+      <div id="tl-legend-row">
+        <span class="tl-legend-end">quiet</span>
+        <div id="tl-legend-gradient"></div>
+        <span class="tl-legend-end">storm</span>
+      </div>
+    </div>
   `;
   document.body.appendChild(container);
 

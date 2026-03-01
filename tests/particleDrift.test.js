@@ -5,8 +5,14 @@ import {
   driftShellPosition,
   lossConeAngle,
   injectionRate,
-  injectionLRange,
+  outerBeltLRange,
   lossLifetime,
+  crandInjectionRate,
+  innerBeltLRange,
+  innerBeltLifetime,
+  innerBeltElectronRate,
+  innerBeltElectronLRange,
+  ringCurrentLRange,
 } from '../src/physics/particleDrift.js';
 
 // ─── driftRate ────────────────────────────────────────────────────────────────
@@ -159,21 +165,67 @@ describe('injectionRate', () => {
   });
 });
 
-// ─── injectionLRange ──────────────────────────────────────────────────────────
+// ─── outerBeltLRange ──────────────────────────────────────────────────────────
 
-describe('injectionLRange', () => {
+describe('outerBeltLRange', () => {
   it('lMin < lMax for all Dst values', () => {
     for (const dst of [0, -30, -80, -160]) {
-      const { lMin, lMax } = injectionLRange(dst);
+      const { lMin, lMax } = outerBeltLRange(dst);
       expect(lMin).toBeLessThan(lMax);
     }
   });
 
   it('injection L shifts inward during storms', () => {
-    const quiet = injectionLRange(0);
-    const storm = injectionLRange(-150);
+    const quiet = outerBeltLRange(0);
+    const storm = outerBeltLRange(-150);
     expect(storm.lMax).toBeLessThanOrEqual(quiet.lMax);
     expect(storm.lMin).toBeLessThanOrEqual(quiet.lMin);
+  });
+});
+
+// ─── crandInjectionRate ───────────────────────────────────────────────────────
+
+describe('crandInjectionRate', () => {
+  it('returns a positive constant', () => {
+    expect(crandInjectionRate()).toBeGreaterThan(0);
+  });
+
+  it('returns the same value on every call (pure constant)', () => {
+    expect(crandInjectionRate()).toBe(crandInjectionRate());
+  });
+});
+
+// ─── innerBeltLRange ──────────────────────────────────────────────────────────
+
+describe('innerBeltLRange', () => {
+  it('returns lMin = 1.2 and lMax = 2.0 (constant)', () => {
+    const { lMin, lMax } = innerBeltLRange();
+    expect(lMin).toBeCloseTo(1.2, 5);
+    expect(lMax).toBeCloseTo(2.0, 5);
+  });
+
+  it('lMin < lMax', () => {
+    const { lMin, lMax } = innerBeltLRange();
+    expect(lMin).toBeLessThan(lMax);
+  });
+});
+
+// ─── innerBeltLifetime ────────────────────────────────────────────────────────
+
+describe('innerBeltLifetime', () => {
+  it('returns a longer lifetime at lower L (deeper trapping)', () => {
+    expect(innerBeltLifetime(1.2)).toBeGreaterThan(innerBeltLifetime(2.0));
+  });
+
+  it('is always positive across the inner belt range', () => {
+    for (const L of [1.2, 1.4, 1.6, 1.8, 2.0]) {
+      expect(innerBeltLifetime(L)).toBeGreaterThan(0);
+    }
+  });
+
+  it('is substantially longer than outer belt electron lifetimes (25–45 s)', () => {
+    // Inner belt protons are long-lived CRAND particles; contrast is key visually.
+    expect(innerBeltLifetime(1.5)).toBeGreaterThan(200);
   });
 });
 
@@ -187,6 +239,80 @@ describe('lossLifetime', () => {
   it('returns a positive number for all L values', () => {
     for (const L of [1.2, 2, 3, 4, 5, 6]) {
       expect(lossLifetime(L)).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ─── innerBeltElectronRate ────────────────────────────────────────────────────
+
+describe('innerBeltElectronRate', () => {
+  it('returns a positive constant', () => {
+    expect(innerBeltElectronRate()).toBeGreaterThan(0);
+  });
+
+  it('returns the same value on every call (pure constant)', () => {
+    expect(innerBeltElectronRate()).toBe(innerBeltElectronRate());
+  });
+
+  it('is less than crandInjectionRate (electron diffusion trickle < CRAND proton rate)', () => {
+    expect(innerBeltElectronRate()).toBeLessThan(crandInjectionRate());
+  });
+});
+
+// ─── innerBeltElectronLRange ──────────────────────────────────────────────────
+
+describe('innerBeltElectronLRange', () => {
+  it('returns lMin = 1.5 and lMax = 2.0 (outer portion of inner belt)', () => {
+    const { lMin, lMax } = innerBeltElectronLRange();
+    expect(lMin).toBeCloseTo(1.5, 5);
+    expect(lMax).toBeCloseTo(2.0, 5);
+  });
+
+  it('lMin < lMax', () => {
+    const { lMin, lMax } = innerBeltElectronLRange();
+    expect(lMin).toBeLessThan(lMax);
+  });
+
+  it('electron range is nested inside the CRAND proton range (lMin ≥ CRAND lMin)', () => {
+    // CRAND protons fill L=1.2–2.0; diffusion electrons only reach L=1.5–2.0
+    const { lMin: eLMin } = innerBeltElectronLRange();
+    const { lMin: pLMin } = innerBeltLRange();
+    expect(eLMin).toBeGreaterThanOrEqual(pLMin);
+  });
+});
+
+// ─── ringCurrentLRange ────────────────────────────────────────────────────────
+
+describe('ringCurrentLRange', () => {
+  it('lMin < lMax for all Dst values', () => {
+    for (const dst of [0, -30, -80, -160, -300]) {
+      const { lMin, lMax } = ringCurrentLRange(dst);
+      expect(lMin).toBeLessThan(lMax);
+    }
+  });
+
+  it('ring current L shifts inward during storms', () => {
+    const quiet  = ringCurrentLRange(0);
+    const severe = ringCurrentLRange(-200);
+    expect(severe.lMax).toBeLessThanOrEqual(quiet.lMax);
+    expect(severe.lMin).toBeLessThanOrEqual(quiet.lMin);
+  });
+
+  it('quiet L-range extends to L ≈ 4.5 (ring current reaches mid-outer belt)', () => {
+    const { lMax } = ringCurrentLRange(0);
+    expect(lMax).toBeGreaterThanOrEqual(4.0);
+  });
+
+  it('severe storm compresses ring current to L < 3 (lMax < 3.5 at Dst = −200)', () => {
+    const { lMax } = ringCurrentLRange(-200);
+    expect(lMax).toBeLessThanOrEqual(3.5);
+  });
+
+  it('returns values in physically reasonable range (1 ≤ lMin, lMax ≤ 7)', () => {
+    for (const dst of [0, -50, -100, -200]) {
+      const { lMin, lMax } = ringCurrentLRange(dst);
+      expect(lMin).toBeGreaterThanOrEqual(1);
+      expect(lMax).toBeLessThanOrEqual(7);
     }
   });
 });

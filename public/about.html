@@ -493,6 +493,92 @@
     The injection rate and target L-shell both scale with the Dst index.
   </p>
 
+  <h3>Four particle populations — what the visualization shows</h3>
+  <p>
+    The inner and outer belts are not populated by a single species. The visualization models
+    four physically distinct populations, each with a different source, species, energy, and
+    drift direction. They are distinguished by colour: <strong>orange = protons</strong>,
+    <strong>blue = electrons</strong>.
+  </p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">A</div>
+      <div class="step-body">
+        <strong style="color:#e07030;">Inner belt protons — CRAND source (L = 1.2–2.0)</strong><br>
+        <em>Cosmic Ray Albedo Neutron Decay</em>: galactic cosmic rays (the most energetic particles
+        in the universe) continuously bombard Earth's upper atmosphere. They produce cascades of
+        secondary neutrons. Some of those neutrons escape upward and then decay in flight —
+        n&nbsp;→&nbsp;p&nbsp;+&nbsp;e<sup>−</sup>&nbsp;+&nbsp;ν̄<sub>e</sub> — creating a proton
+        and an electron that may be magnetically trapped. The resulting protons accumulate deep in
+        the inner belt. This source is <strong>constant and independent of solar wind</strong> —
+        it runs whether the Sun is active or quiet. Orange particles, drifting slowly westward
+        (clockwise from the north pole), with very long visual lifetimes (300–600 s).
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">B</div>
+      <div class="step-body">
+        <strong style="color:#4070e0;">Inner belt electrons — inward diffusion (L = 1.5–2.0)</strong><br>
+        Electrons from the outer belt slowly diffuse inward through radial diffusion, driven by
+        ULF wave activity. They accumulate in the outer portion of the inner belt (L&nbsp;=&nbsp;1.5–2.0)
+        but rarely reach the deep inner belt (L&nbsp;&lt;&nbsp;1.5) where the proton population
+        dominates. This is a small, steady population — independent of the current storm state.
+        Blue particles, drifting eastward (counterclockwise) and visibly <em>faster</em> than
+        the colocated CRAND protons: at the same L-shell, 1&nbsp;MeV electrons complete an orbit
+        in roughly one-sixth the time of 30&nbsp;MeV CRAND protons (drift period ∝ 1/E).
+        When viewed together, the overlapping orange and blue glow of populations A and B produces
+        a warm, mixed-colour inner belt — a visible signature of two species coexisting.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">C</div>
+      <div class="step-body">
+        <strong style="color:#4070e0;">Outer belt electrons — storm injection (L = 3.0–6.0)</strong><br>
+        During geomagnetic storms, the compressed nightside plasma sheet injects large fluxes of
+        electrons inward. These electrons are quickly energised by betatron and Fermi acceleration
+        during inward transport, and further accelerated over hours to days by chorus wave-particle
+        interactions. This is the most dynamic population: the outer belt can increase by three
+        to four orders of magnitude in flux within a day, then deplete just as rapidly through
+        magnetopause shadowing and whistler-mode hiss scattering. Blue particles appearing on
+        the nightside and drifting rapidly eastward.
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">D</div>
+      <div class="step-body">
+        <strong style="color:#e07030;">Ring current protons — storm injection (L = 1.5–4.5)</strong><br>
+        Injected alongside the outer belt electrons from the nightside plasma sheet, these are the
+        10–300&nbsp;keV protons that <em>are</em> the ring current — the same current whose
+        depression of Earth's surface field we measure as the Dst index. The Dst is, in effect,
+        a direct measurement of the energy content of these protons. They inhabit a wider L-range
+        than the outer belt electrons and, crucially, are <strong>not blocked by the slot region</strong>
+        — protons can exist freely in the slot (L&nbsp;=&nbsp;2–3). Orange particles drifting
+        westward, injection rising with storm intensity.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>What to look for in the visualization:</strong>
+    <ul style="margin: 8px 0 0 16px; line-height: 1.9;">
+      <li><strong>Inner belt colour mix</strong> — the deep inner belt (L&nbsp;&lt;&nbsp;2) glows orange (CRAND protons)
+        with a blue wash from diffusion electrons. The combined additive glow appears warm-white at high particle density.</li>
+      <li><strong>Drift speed contrast</strong> — watch the inner belt closely: orange protons crawl westward while blue electrons
+        streak eastward in the same region, crossing through each other. This is not a simulation artefact — it is real physics.</li>
+      <li><strong>The slot gap</strong> — in quiet conditions (Dst near 0), the region between L&nbsp;≈&nbsp;2 and L&nbsp;≈&nbsp;3
+        is conspicuously dark of electrons. Electrons are rapidly scattered out by electromagnetic ion cyclotron (EMIC) and
+        whistler-mode hiss waves. Orange ring current protons may still pass through the slot.</li>
+      <li><strong>Storm-time injection</strong> — scrub the timeline to a storm event (e.g. May 2024). Watch outer belt
+        electrons (blue) appear on the nightside and sweep eastward, filling the outer belt within minutes of simulation time.
+        The target L-range shifts inward as Dst drops.</li>
+      <li><strong>Inner belt stability</strong> — no matter how fierce the storm, the CRAND proton population (A) barely
+        changes. The inner belt has been building steadily for billions of years and cannot be depleted by a single storm.</li>
+      <li><strong>Belt isosurface colour</strong> — the rendered shell surfaces brighten and shift from blue toward blue-white
+        during storms, encoding the elevated outer belt electron flux via the empirical Kp/Dst model (Meredith et al. 2003).</li>
+    </ul>
+  </div>
+
   <h3>Aurora connection</h3>
   <p>
     Particles whose equatorial pitch angle falls below the
@@ -617,6 +703,55 @@
       <div class="cite-note">
         Equatorial loss cone formula sin²(α<sub>LC</sub>) = 4&nbsp;/&nbsp;(L³&nbsp;√(4&nbsp;−&nbsp;3/L))
         used in <code>src/physics/particleDrift.js:lossConeAngle()</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Outer zone relativistic electron acceleration associated with substorm-enhanced
+        whistler mode chorus
+      </div>
+      <div class="cite-authors">
+        Meredith, N.P., Cain, M., Horne, R.B., Thorne, R.M., Summers, D., &amp; Anderson, R.R. (2003).
+        <em>Journal of Geophysical Research: Space Physics</em>, 108(A6), 1248.
+        <a href="https://doi.org/10.1029/2002JA009511" target="_blank">doi:10.1029/2002JA009511</a>
+      </div>
+      <div class="cite-note">
+        Empirical basis for the Kp-driven outer belt electron flux model
+        (<code>computeBeltFlux</code> in <code>src/physics/beltFlux.js</code>).
+        Outer belt flux scales strongly with Kp through chorus wave acceleration.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        An extreme distortion of the Van Allen belt arising from the "Halloween" solar storm
+        in 2003
+      </div>
+      <div class="cite-authors">
+        Baker, D.N., Kanekal, S.G., Li, X., Monk, S.P., Goldstein, J., &amp; Burch, J.L. (2004).
+        <em>Nature</em>, 432, 878–881.
+        <a href="https://doi.org/10.1038/nature03116" target="_blank">doi:10.1038/nature03116</a>
+      </div>
+      <div class="cite-note">
+        Documents the extreme slot-region filling observed during the Halloween 2003 storms
+        (Dst ≈ −383&nbsp;nT), the observational basis for the slot-filling threshold
+        (Dst&nbsp;&lt;&nbsp;−100&nbsp;nT) implemented in <code>computeBeltFlux</code>.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        The cosmic-ray albedo-neutron decay origin of the inner radiation belt
+      </div>
+      <div class="cite-authors">
+        Singer, S.F. (1958). <em>Physical Review Letters</em>, 1, 181–183.
+        <a href="https://doi.org/10.1103/PhysRevLett.1.181" target="_blank">doi:10.1103/PhysRevLett.1.181</a>
+      </div>
+      <div class="cite-note">
+        Original proposal of the CRAND mechanism: galactic cosmic rays produce secondary neutrons in
+        the atmosphere, which then decay into protons that become trapped in the inner belt.
+        Confirmed observationally by Van Allen et al. and subsequent instruments.
       </div>
     </div>
 

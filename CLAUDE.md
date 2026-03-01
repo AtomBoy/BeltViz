@@ -146,8 +146,7 @@ When adding a new physics model, algorithm, or data source:
 
 ### Imediate issues
 
-- [ ] We should use the right IGRF data for the datetime the simulation is using. Lets generate files for each epoch we can. Put the files in data/igrf and load them as needed when the date changes in the simulation.
-- [ ] Lets tidy up the data folder by moving the solar wind files to data/solarwind.
+- [ ] For the particle simulation- having electrons and protons share the same 'Max Particles' count leads to the protons dominating the particles because they last longer. Come up with a way to allocate (split) the max particle count to each type such that their ratio stays accurate to the physics. Perhaps a ratio 'average age' of each type could be used to set a per-type max particle count. This will probably vary with solar wind conditions. The goal is to have a realistic ratio of protons to electrons while keeping close to the 'Max Particles' limit.
 
 ### Longer term - Phase 4, 5, 6 - we're not implementing these yet but keeping them in mind
 
