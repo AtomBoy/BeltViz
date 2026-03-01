@@ -24,8 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (with diagnostics)
+        run: |
+          set -o pipefail
+          echo "node:" $(node --version)
+          echo "npm:" $(npm --version)
+          npm run build 2>&1 | tee build.log || (
+            echo "--- BUILD FAILED: last 500 lines of build.log ---"
+            tail -n 500 build.log || true
+            echo "--- workspace listing ---"
+            ls -la || true
+            echo "--- disk usage (top) ---"
+            du -sh ./* 2>/dev/null || true
+            exit 1
+          )
 
       - name: Create CNAME for custom domain
         run: |
