@@ -222,6 +222,43 @@
     by the Dst index.
   </p>
 
+  <h3>Reconnection timescales — how fast field lines change topology</h3>
+  <p>
+    Not all field line changes happen at the same speed.
+    When solar wind conditions shift gradually — ram pressure rising, the magnetopause
+    slowly compressing — the field lines that remain topologically closed simply reshape,
+    convecting toward the subsolar point on timescales set by the Dungey cycle:
+    roughly 20–60 minutes for flux to cross from the dayside reconnection site, down the
+    tail lobes, and reconnect again in the magnetotail (Cowley 1984;
+    Paschmann et al. 1979).
+    But the moment a field line crosses the reconnection X-line — the current-sheet point
+    where antiparallel field geometries meet and reconnect — its topology changes
+    <em>abruptly</em>.
+    The X-line itself forms and evolves on the <strong>ion inertial length</strong>
+    (~100&nbsp;km at the magnetopause), and the resulting change in field-line connectivity
+    propagates at the local Alfvén speed (~400–800&nbsp;km/s) from the X-line into the
+    magnetosphere, reaching the ionosphere in roughly 2–5 minutes (Paschmann et al. 1979;
+    Cowley 1984).
+    Compared to the hours-long convection timescale, individual reconnection events
+    are nearly instantaneous in their topological effect.
+  </p>
+
+  <div class="callout">
+    <strong>How this appears in the visualization.</strong>
+    When solar wind parameters change and the field-line tracing is recomputed, lines that
+    remain topologically closed (both footpoints on Earth's surface) morph slowly over ~8&nbsp;s,
+    conveying the gradual convection of stable flux tubes.
+    Lines that <em>change</em> topology — a previously closed line opening to the solar wind,
+    or an open polar-cap line closing as the dayside field relaxes — snap to their new
+    configuration in ~0.8&nbsp;s, roughly 10× faster.
+    The snap uses an ease-in curve (slow start, rapid finish) to suggest the physical behaviour:
+    a field line resists topological change, then breaks and reconnects suddenly.
+    The 0.8&nbsp;s and 8&nbsp;s durations are visual design choices, not physical simulations
+    of reconnection or convection timescales — the real phenomena span seconds to hours.
+    The aim is to convey the <em>character</em> of the two processes: gradual reshaping versus
+    sudden topological snap.
+  </div>
+
   <h3>Field lines versus L-shell surfaces</h3>
   <p>Two distinct representations appear in this visualization, answering different questions:</p>
   <div class="steps">
@@ -352,6 +389,40 @@
       <div class="cite-note">
         Predicted that southward IMF enables dayside magnetic reconnection — the fundamental
         mechanism by which solar wind energy enters the magnetosphere and drives storms.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Plasma acceleration at the Earth's magnetopause: evidence for reconnection
+      </div>
+      <div class="cite-authors">
+        Paschmann, G., Sonnerup, B.U.Ö., Papamastorakis, I., Sckopke, N., Haerendel, G.,
+        Bame, S.J., Asbridge, J.R., Gosling, J.T., Russell, C.T., &amp; Elphic, R.C. (1979).
+        <em>Nature</em>, 282, 243–246.
+        <a href="https://doi.org/10.1038/282243a0" target="_blank">doi:10.1038/282243a0</a>
+      </div>
+      <div class="cite-note">
+        First direct in-situ observation of magnetic reconnection at Earth's magnetopause
+        (ISEE satellites). Measured the reconnection jet and field rotation consistent with
+        a thin X-line forming rapidly on the ion inertial scale; source for reconnection
+        timescale context in this app.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Solar wind control of magnetospheric convection
+      </div>
+      <div class="cite-authors">
+        Cowley, S.W.H. (1984). In <em>Achievements of the International Magnetospheric Study
+        (IMS)</em>, ESA SP-217, pp. 483–494. European Space Agency.
+      </div>
+      <div class="cite-note">
+        Reviews the Dungey cycle in the context of real observations: dayside reconnection
+        drives 20–60 min convection cycles, with individual X-line events propagating at
+        Alfvénic speeds (~400–800&nbsp;km/s) from the magnetopause to the ionosphere in
+        roughly 2–5 minutes. Source for the reconnection propagation timescale cited here.
       </div>
     </div>
 
@@ -639,22 +710,41 @@
     intense activity. Some notable events in the dataset:
   </p>
   <ul>
-    <li><strong>March 1989</strong> — one of the strongest storms of the modern era
-      (Dst ≈ −589&nbsp;nT), responsible for the Quebec power-grid blackout.</li>
-    <li><strong>October–November 2003</strong> ("Halloween storms") — two back-to-back
+    <li>
+      <strong>March 1989</strong> — one of the strongest storms of the modern era
+      (Dst ≈ −589&nbsp;nT), responsible for the Quebec power-grid blackout.
+      <a href="/#date=1989-03-13T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
+        View in visualization ↗
+      </a>
+    </li>
+    <li>
+      <strong>October–November 2003</strong> ("Halloween storms") — two back-to-back
       X-class flares with Dst reaching −383&nbsp;nT; aurora visible at mid-latitudes
-      across North America and Europe.</li>
-    <li><strong>September 2017</strong> — X9.3 flare (the largest of Solar Cycle 24),
-      Dst ≈ −142&nbsp;nT; aurora sightings as far south as Texas.</li>
-    <li><strong>May 2024</strong> — first severe storm (G5) in twenty years,
-      Dst ≈ −412&nbsp;nT; widespread aurora across the northern and southern hemispheres.</li>
+      across North America and Europe.
+      <a href="/#date=2003-10-29T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
+        View in visualization ↗
+      </a>
+    </li>
+    <li>
+      <strong>September 2017</strong> — X9.3 flare (the largest of Solar Cycle 24),
+      Dst ≈ −142&nbsp;nT; aurora sightings as far south as Texas.
+      <a href="/#date=2017-09-06T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
+        View in visualization ↗
+      </a>
+    </li>
+    <li>
+      <strong>May 2024</strong> — first severe storm (G5) in twenty years,
+      Dst ≈ −412&nbsp;nT; widespread aurora across the northern and southern hemispheres.
+      <a href="/#date=2024-05-10T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
+        View in visualization ↗
+      </a>
+    </li>
   </ul>
   <p>
-    Navigate to any of these dates with the day buttons or by dragging the playhead,
-    then set the speed to 60× or 3600× to watch the belt fill and drain over hours.
-    Enable <em>Belt Particles</em> and <em>Aurora</em> in the control panel to see the
-    full effect. The Dst readout in the Solar Wind panel updates automatically as the
-    timeline advances.
+    Each link above opens the visualization at the storm's peak date with belts, particles,
+    and aurora already enabled. Set the playback speed to 60× or 3600× to watch the belt
+    fill and drain over hours. The Dst readout in the Solar Wind panel updates automatically
+    as the timeline advances.
   </p>
 
   <h3>Radiation belt particle physics — references</h3>

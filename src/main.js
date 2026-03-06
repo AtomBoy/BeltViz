@@ -367,6 +367,9 @@ function rebuildFieldLinesFull(tracedLines) {
   });
   fieldLineGroup.visible = params.showFieldLines;
   scene.add(fieldLineGroup);
+  fieldLineGroup.children.forEach((mesh, i) => {
+    mesh.userData.isOpen = renderableLines[i].isOpen ?? false;
+  });
   applyClipChanges(); // restore any active clipping planes to new meshes
 }
 
@@ -393,10 +396,19 @@ function startFieldLineTransition(newTracedLines, duration = 8200) {
       return;
     }
 
+    const oldIsOpen = mesh.userData.isOpen ?? false;
+    const newIsOpen = line.isOpen ?? false;
+    const topologyChanged = oldIsOpen !== newIsOpen;
+    const lineDuration = topologyChanged ? RECONNECTION_MORPH_DURATION : duration;
+    const easing = topologyChanged ? easingSnapIn : easingSmooth;
+    mesh.userData.isOpen = newIsOpen; // update now so next rebuild compares correctly
+
     lines.push({
       mesh,
       oldPos: mesh.geometry.attributes.position.array.slice(),
       newPos: targetMesh.geometry.attributes.position.array.slice(),
+      lineDuration,
+      easing,
     });
 
     targetMesh.geometry.dispose();
@@ -405,7 +417,7 @@ function startFieldLineTransition(newTracedLines, duration = 8200) {
 
   fieldLineTransition = {
     startTime: performance.now(),
-    duration,
+    duration: Math.max(...lines.map((l) => l.lineDuration)), // transition ends when last line finishes
     lines,
   };
 }
@@ -417,11 +429,12 @@ function startFieldLineTransition(newTracedLines, duration = 8200) {
 function updateFieldLineTransition(now) {
   if (!fieldLineTransition) return;
 
-  let t = (now - fieldLineTransition.startTime) / fieldLineTransition.duration;
-  if (t > 1) t = 1;
-  const s = t * t * (3 - 2 * t); // smoothstep easing
+  const elapsed = now - fieldLineTransition.startTime;
+  const globalT = elapsed / fieldLineTransition.duration;
 
-  for (const { mesh, oldPos, newPos } of fieldLineTransition.lines) {
+  for (const { mesh, oldPos, newPos, lineDuration, easing } of fieldLineTransition.lines) {
+    const t = Math.min(1, elapsed / lineDuration);
+    const s = easing(t);
     const arr = mesh.geometry.attributes.position.array;
     for (let j = 0; j < arr.length; j++) {
       arr[j] = oldPos[j] + s * (newPos[j] - oldPos[j]);
@@ -431,7 +444,7 @@ function updateFieldLineTransition(now) {
     mesh.geometry.computeBoundingSphere();
   }
 
-  if (t >= 1) fieldLineTransition = null;
+  if (globalT >= 1) fieldLineTransition = null;
 }
 
 function applyVisualChanges() {
@@ -816,6 +829,16 @@ let sunMixer  = null;
 let moonMixer = null;
 let sunAction = null;
 let moonAction = null;
+
+const RECONNECTION_MORPH_DURATION = 800; // ms — topology-change lines snap faster than stable lines
+
+// Easing functions for field line morphs.
+// Stable lines use smoothstep (symmetric ease-in-out — gentle convection).
+// Reconnecting lines use ease-in-cubic (slow start → fast snap at the end,
+// matching the physical behaviour of reconnection: field lines resist change
+// then suddenly snap into new connectivity).
+const easingSmooth     = (t) => t * t * (3 - 2 * t);          // smoothstep
+const easingSnapIn     = (t) => t * t * t;                     // ease-in cubic
 
 let fieldLineTransition = null; // null = idle; { startTime, duration, lines } = animating
 let lastDataHour = null;        // Unix seconds (floor-to-hour) of last historical data pull

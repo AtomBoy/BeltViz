@@ -48,7 +48,12 @@ self.onmessage = function (e) {
       maxDegree,
       solarWindParams,
     });
-    tracedLines.push({ points, lat: seed.lat, lon: seed.lon });
+    const pts = points;
+    const r0sq = pts[0][0] ** 2 + pts[0][1] ** 2 + pts[0][2] ** 2;
+    const r1sq = pts[pts.length - 1][0] ** 2 + pts[pts.length - 1][1] ** 2 + pts[pts.length - 1][2] ** 2;
+    const OPEN_THRESHOLD_SQ = (6371.2 * 2) ** 2; // 2 Re in km, squared
+    const isOpen = r0sq > OPEN_THRESHOLD_SQ || r1sq > OPEN_THRESHOLD_SQ;
+    tracedLines.push({ points, lat: seed.lat, lon: seed.lon, isOpen });
   }
 
   self.postMessage({ type: 'fieldLinesReady', buildId, tracedLines });
