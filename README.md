@@ -156,6 +156,62 @@ getSolarWindParams()   →  T01 parmod + Shue magnetopause
 | IGRF degree / resolution change | field lines + isosurfaces + belts |
 | Visual-only change (opacity, visibility) | geometry reuse, no recompute |
 
+### Radiation belt geometry
+
+Belt meshes are **analytic dipole toroids** built from the field-line formula (no marching cubes):
+
+```
+r(λ) = L · cos²(λ)       [Earth radii]
+ρ(λ) = L · cos³(λ)       [equatorial distance]
+y(λ) = L · cos²(λ) · sin(λ)  [north-south]
+```
+
+Each belt is swept azimuthally with a **D-shaped cross-section**: inner boundary at fixed `lMin`, outer boundary tapers from `lMax` at the equator to `lMin` at ±`latLimit` (the loss-cone latitude) so the tips close smoothly. Definitions:
+
+| Belt | L range | Lat limit | Color |
+|---|---|---|---|
+| Inner (CRAND protons) | L = 1.2–2.0 | ±38° | warm orange |
+| Outer (storm electrons) | L = 3.0–5.0 | ±28° | teal/cyan |
+
+**Storm deformation** (`applyStormDeformation`): outer belt vertices are scaled radially by `1 − stormIntensity × 0.22 × cos(angle_from_sun)`. This compresses the dayside and stretches the nightside as the Dst index worsens.
+
+**Dipole tilt**: the belt group and particle mesh are both rotated by the IGRF dipole quaternion so they align with the real magnetic axis rather than the geographic pole. The tilt axis is derived from IGRF degree-1 coefficients `(g₁₀, g₁₁, h₁₁)`:
+
+```javascript
+// Magnetic north axis — pointing toward the pole, not away from it.
+// Using (-g11, -g10, -h11) keeps the rotation near 10° (well-conditioned).
+// Using (g11, g10, h11) would point to magnetic south (~170° rotation),
+// causing setFromUnitVectors(Y, near-Y-neg) to choose an arbitrary azimuthal axis.
+const dipoleAxis = new THREE.Vector3(-g11, -g10, -h11).normalize();
+```
+
+### Van Allen belt particles
+
+Four physically distinct populations are simulated as `THREE.Points` (additive blending):
+
+| Pop | Species | Source | L range | Lifetime | Color |
+|---|---|---|---|---|---|
+| A | Proton (inner) | CRAND — cosmic ray neutron decay | 1.2–2.0 | 300–600 s | orange |
+| B | Electron (inner) | Inward radial diffusion | 1.5–2.0 | 120 s | blue |
+| C | Electron (outer) | Nightside plasma sheet, storm-driven | 3.0–4.5 | 25–45 s | blue |
+| D | Proton (ring current) | Nightside plasma sheet, storm-driven | 1.5–4.5 | 35–45 s | orange |
+
+Particle budgets use **Little's Law** (N_steady = rate × τ) so each population's share of the max-particle pool is proportional to its steady-state count. Budgets recalculate each frame from the current Dst index.
+
+Outer belt electrons and ring current protons are injected from the **nightside** (anti-solar ± 90°) and their positions are deformed by the same storm formula as the belt meshes, keeping particles visually aligned with the belt geometry during storms.
+
+The slot region (L = 2–3) is **empty of electrons** at Dst > −100 nT, filled only during extreme storms (Baker et al. 2004).
+
+### URL state persistence
+
+All simulation parameters are serialised to the **URL fragment** (`window.location.hash`) so any state can be bookmarked or shared. Only non-default values are written. The URL is debounced (500 ms) and uses `location.replace()` so slider drags do not pollute browser history.
+
+```
+http://localhost:5173/#innerBelt=true&outerBelt=true&particles=true&dst=-92&vSw=600&bz=-15
+```
+
+Key/value pairs use short readable keys (`showFL`, `isoLevels`, `dst`, `particles`, `camX/Y/Z`, …). Camera position is written as an **atomic triplet** — all three components or none — so a partial URL never leaves the camera half-restored on load. The `isoLevels` key is re-applied after `initIsoLevels()` runs during GUI setup, since that function resets the active set to defaults.
+
 ---
 
 ## Data Scripts
@@ -179,6 +235,12 @@ node scripts/convert-solarwind.js 2025 /path/to/omni2.dat  # OMNI2 fallback (no 
 ```
 
 Output: `public/data/solarwind/YYYY-MM.json`. The app lazy-loads per month at runtime.
+
+---
+
+## Data Sources & References
+
+Full citations for physics models, data sources, and software are in **[public/about.html](public/about.html)**.
 
 ---
 

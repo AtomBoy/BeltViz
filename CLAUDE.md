@@ -90,7 +90,15 @@ coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCube
 
 ### Radiation belt visualization
 
-The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries (inner belt: L=1.2–2, outer belt: L=3–6) rendered as colored semi-transparent shells via `src/scene/radiationBelts.js`.
+Belt meshes are **analytic dipole toroids** built in `src/scene/radiationBelts.js` — no marching cubes. Each belt is a revolved D-shaped cross-section: inner boundary at fixed `lMin`, outer boundary tapers from `lMax` at the equator to `lMin` at ±`latLimit` (loss-cone latitude) so the tips close smoothly. `nLat=80` profile points, `nAz=120` azimuthal segments. Definitions: inner belt L=1.2–2.0, ±38°; outer belt L=3.0–5.0, ±28°.
+
+**Storm deformation**: outer belt only. `applyStormDeformation()` scales each vertex radially by `1 − stormIntensity × 0.22 × cos(φ − sunLon)`. `stormIntensity = min(1, |Dst| / 150)`. Inner belt (CRAND protons) is stable and does not deform.
+
+**Dipole tilt**: both `radiationBeltGroup` and `particleSystem.mesh` are rotated by `getDipoleQuaternion()`. The axis is `new THREE.Vector3(-g11, -g10, -h11).normalize()` from IGRF degree-1 coefficients — pointing toward **magnetic north** (~10° from geographic +Y). Using the un-negated vector `(g11, g10, h11)` would point to magnetic south (~170° rotation from +Y), causing `setFromUnitVectors(Y, near-Y-neg)` to choose an ill-conditioned azimuthal rotation axis, producing a wrong ~90° CCW offset in the belt tilt.
+
+**Material**: `MeshPhysicalMaterial`, `roughness: 0.55`, `emissiveIntensity: 0.15` (enough for nightside visibility without washing out directional lighting). `updateBeltFlux()` modulates opacity and emissive per frame from `computeBeltFlux(kp, dst)` output.
+
+The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries rendered as colored semi-transparent shells. The L-shell isosurfaces are also tilted by the dipole quaternion.
 
 ### Solar wind external field (Phase 3)
 
@@ -112,6 +120,38 @@ The `solarWindParams` object (`{ vSw, nSw, imfBz, dst, sunLonRad, ps, enabled }`
 **Important**: Scalar field grids (L-shell, |B|) always use pure IGRF — the dipole L-shell approximation (`L = r/(Re*cos²λ_m)`) breaks down with external fields, producing artifacts at the tail current neutral sheet and magnetopause boundary. This is a known limitation of McIlwain L in disturbed fields (Roederer & Lejosne 2018). The correct fix requires Roederer L* (drift shell tracing) or full Tsyganenko model — both deferred.
 
 Storm presets: Quiet (v=400, n=5, Bz=0, Dst=0), Moderate Storm (v=500, n=10, Bz=-5, Dst=-50), Severe Storm (v=700, n=20, Bz=-15, Dst=-150).
+
+### Van Allen belt particles
+
+`src/scene/particleSystem.js` — four populations, each a physically distinct source:
+
+| Pop | Label | Species | Source | L range | Lifetime |
+|---|---|---|---|---|---|
+| A | CRAND | Proton | Cosmic ray neutron decay, constant | 1.2–2.0 | 300–600 s |
+| B | InnerElec | Electron | Inward radial diffusion, constant | 1.5–2.0 | 120 s |
+| C | OuterElec | Electron | Nightside injection, Dst-driven | 3.0–4.5 | 25–45 s |
+| D | RingCurrent | Proton | Nightside injection, Dst-driven | 1.5–4.5 | 35–45 s |
+
+Budgets use **Little's Law** (N_steady = rate × τ) to split the `maxCount` pool proportionally each frame. Inner belt (A, B) are azimuthally uniform; outer belt (C, D) inject from the nightside (anti-solar ± 90°).
+
+**Particle placement**: `maxLambda = acos(sqrt(1/L)) * 0.35`. The `0.35` factor keeps particles near the magnetic equatorial plane. Using 0.65 sends particles to high latitudes where their equatorial projection (r·cos²λ) falls inside Earth when viewed from the pole.
+
+**Storm deformation on particles**: same `1 − stormIntensity × 0.22 × cosAngle` formula as the belt meshes, applied only to pops C and D (outer belt). Inner belt particles are stable and undeformed.
+
+**`animate()` first-frame pitfall**: `animate()` is called directly (not via `requestAnimationFrame`) at the end of `init()`. Without a `now` argument, `dt = (undefined - 0) / 1000 = NaN`. This corrupts particle `phi` values (`NaN + rate * NaN = NaN`) making burst-injected particles invisible forever. Fix: `function animate(now = performance.now())`.
+
+**Merging nested URL params**: when applying URL overrides to `params.particles` or `params.aurora`, do the nested `Object.assign` *before* the top-level `Object.assign(params, overrides)` and `delete` the key. Otherwise `Object.assign(params, overrides)` replaces the entire sub-object (losing `showElectrons` etc.) before the nested merge can restore them.
+
+### URL state persistence
+
+`src/ui/urlParams.js` — bidirectional URL hash ↔ params sync.
+
+- `readFromUrl()` → `{ params, isoLevels, camera }`. Parses `window.location.hash`. Returns `camera: {x, y, z}` only if all three keys are present (all-or-nothing).
+- `applyIsoLevelsFromUrl(params, str)` — applies comma-separated active level keys after `initIsoLevels()` runs during GUI setup (which resets to defaults).
+- `scheduleUrlWrite(params, camera)` — debounced 500 ms, `location.replace()` (no history pollution). Only non-default values are written; floats normalized with `toPrecision(6)`.
+- Camera position written as **atomic triplet** (`camX/Y/Z` all-or-none): if any component differs from default `(0, 1.5, 4)` write all three; otherwise omit all. This prevents partial URLs from leaving the camera half-restored.
+- `controls.addEventListener('change', ...)` in main.js tracks user orbit/zoom automatically.
+- `isoLevels` is stored as sorted comma-separated active keys (e.g. `isoLevels=2,4,6,10`).
 
 ### Satellite environment probe
 
