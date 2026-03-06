@@ -253,7 +253,7 @@ export function createParticleSystem(scene) {
   // ── Shared low-level injector ───────────────────────────────────────────────
 
   function placeParticle(slot, L, phi, speciesCode, energyMeV, lifetime, col, pop) {
-    const maxLambda = Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.65;
+    const maxLambda = Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.35;
     const lambdaM   = (Math.random() - 0.5) * 2 * maxLambda;
     const rate      = driftRate(L, energyMeV, speciesCode) * VISUAL_DRIFT_SCALE;
     const cosLM     = Math.cos(lambdaM);
@@ -353,6 +353,9 @@ export function createParticleSystem(scene) {
 
     const dst           = swParams?.dst        ?? 0;
     const sunLonRad     = swParams?.sunLonRad  ?? 0;
+    const stormIntensity = Math.min(1, Math.abs(dst) / 150);
+    const sunDirX        = Math.cos(sunLonRad);
+    const sunDirZ        = Math.sin(sunLonRad);
     const showElectrons = pParams.showElectrons ?? true;
     const showProtons   = pParams.showProtons   ?? true;
     const energy        = pParams.energyMeV ?? 1.0;
@@ -452,9 +455,23 @@ export function createParticleSystem(scene) {
 
       const cosPhi = Math.cos(pPhi[i]);
       const sinPhi = Math.sin(pPhi[i]);
-      posArr[i * 3]     =  pRCosL[i] * cosPhi;
-      posArr[i * 3 + 1] =  pYConst[i];
-      posArr[i * 3 + 2] = -pRCosL[i] * sinPhi;
+      let px =  pRCosL[i] * cosPhi;
+      let py =  pYConst[i];
+      let pz = -pRCosL[i] * sinPhi;
+      // Apply storm-time dayside compression / nightside stretching to outer
+      // belt populations (C = outer electrons, D = ring current protons).
+      // Same formula as applyStormDeformation() in radiationBelts.js.
+      if (stormIntensity > 0.01 && pPop[i] >= 2) {
+        const eq = pRCosL[i];
+        if (eq > 1e-6) {
+          const cosAngle = (px * sunDirX + pz * sunDirZ) / eq;
+          const scale = 1 - stormIntensity * 0.22 * cosAngle;
+          px *= scale; py *= scale; pz *= scale;
+        }
+      }
+      posArr[i * 3]     = px;
+      posArr[i * 3 + 1] = py;
+      posArr[i * 3 + 2] = pz;
       dirtyPos = true;
 
       pAge[i] += dt;

@@ -4,7 +4,7 @@ import * as THREE from 'three';
  * Set up scene lighting: directional (sun) + ambient fill.
  */
 export function setupLighting(scene) {
-  const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
+  const sunLight = new THREE.DirectionalLight(0xffffff, 3.6);
   sunLight.position.set(5, 3, 5);
   scene.add(sunLight);
 

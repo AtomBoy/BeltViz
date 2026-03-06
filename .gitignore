@@ -3,3 +3,6 @@ dist
 public/data/WGhour.d
 public/data/omni2_all_years.dat
 .vscode
+images/
+.playwright-mcp/
+.claude/settings.json

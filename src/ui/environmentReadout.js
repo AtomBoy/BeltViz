@@ -45,7 +45,7 @@ function ensureReadoutElement() {
     #env-readout .label {
       color: #6688aa;
       display: inline-block;
-      width: 80px;
+      width: 90px;
     }
     #env-readout .value {
       color: #aaccee;
@@ -54,6 +54,12 @@ function ensureReadoutElement() {
     #env-readout .region-outer-belt { color: #6666ee; }
     #env-readout .region-slot-region { color: #88aa66; }
     #env-readout .saa-active { color: #ff4444; font-weight: bold; }
+    #env-readout .kp-quiet    { color: #88cc88; }
+    #env-readout .kp-moderate { color: #ddcc44; }
+    #env-readout .kp-storm    { color: #ff6644; }
+    #env-readout .flux-inner  { color: #ff8844; }
+    #env-readout .flux-outer  { color: #6666ee; }
+    #env-readout .flux-slot   { color: #88aa66; }
     #env-readout .title {
       color: #88ccff;
       font-size: 13px;
@@ -69,7 +75,8 @@ function ensureReadoutElement() {
 /**
  * Update the environment readout display.
  *
- * @param {object} data - { latDeg, lonDeg, altitudeKm, bMagnitude, lShell, region, saaProximity }
+ * @param {object} data - { latDeg, lonDeg, altitudeKm, bMagnitude, lShell, region, saaProximity,
+ *   kp, swEnabled, innerFlux, outerFlux, slotFlux }
  * @param {string} [title] - Optional title (e.g. "Satellite Probe")
  */
 export function updateEnvironmentReadout(data, title) {
@@ -87,6 +94,20 @@ export function updateEnvironmentReadout(data, title) {
     ? `<span class="saa-active">Detected (${(data.saaProximity * 100).toFixed(0)}%)</span>`
     : 'Not detected';
 
+  // Kp display
+  const kp = data.kp ?? 0;
+  const kpClass = kp < 3 ? 'kp-quiet' : kp < 5 ? 'kp-moderate' : 'kp-storm';
+  const kpSuffix = data.swEnabled ? '' : ' <span style="color:#4466aa">(SW off)</span>';
+  const kpStr = `<span class="${kpClass}">${kp.toFixed(1)}</span>${kpSuffix}`;
+
+  // Belt flux rows
+  const innerPct = ((data.innerFlux ?? 0) * 100).toFixed(0);
+  const outerPct = ((data.outerFlux ?? 0) * 100).toFixed(0);
+  const slotPct  = ((data.slotFlux  ?? 0) * 100).toFixed(0);
+  const slotRow = (data.slotFlux ?? 0) > 0.01
+    ? `<div><span class="label">Slot</span><span class="flux-slot">${slotPct}%</span></div>`
+    : '';
+
   el.innerHTML = `
     <div class="title">${title || 'Environment'}</div>
     <div><span class="label">Position</span><span class="value">${latStr}, ${lonStr}, ${altStr}</span></div>
@@ -94,6 +115,10 @@ export function updateEnvironmentReadout(data, title) {
     <div><span class="label">L-shell</span><span class="value">${data.lShell.toFixed(2)}</span></div>
     <div><span class="label">Region</span><span class="value ${regionClass}">${regionLabel}</span></div>
     <div><span class="label">SAA</span><span class="value">${saaStr}</span></div>
+    <div><span class="label">Kp</span><span class="value">${kpStr}</span></div>
+    <div><span class="label">Inner Belt</span><span class="flux-inner">${innerPct}%</span></div>
+    <div><span class="label">Outer Belt</span><span class="flux-outer">${outerPct}%</span></div>
+    ${slotRow}
   `;
   el.style.display = 'block';
 }

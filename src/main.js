@@ -23,9 +23,7 @@ import {
   buildRadiationBeltGroup,
   disposeRadiationBeltGroup,
   updateBeltClipping,
-  updateBeltOpacity,
   updateBeltFlux,
-  BELT_DEFINITIONS,
 } from './scene/radiationBelts.js';
 import { computeKp, computeBeltFlux } from './physics/beltFlux.js';
 import { createClippingPlanes } from './scene/clippingPlanes.js';
@@ -38,6 +36,7 @@ import { loadMonth, ensureMonthsForTime, getSolarWindAtTime, setOnMonthLoaded } 
 import { setSolarWindDataNote } from './ui/infoOverlay.js';
 import { createParticleSystem } from './scene/particleSystem.js';
 import { createAuroraRenderer } from './scene/auroraRenderer.js';
+import { readFromUrl, applyIsoLevelsFromUrl, scheduleUrlWrite } from './ui/urlParams.js';
 
 // --- Params (mutable, controlled by GUI) ---
 const params = {
@@ -94,6 +93,16 @@ const params = {
     opacity: 1.0,
   },
 };
+
+// Apply URL hash overrides to params before GUI initialises so sliders start
+// at the correct values. isoLevels must be applied later (after initIsoLevels).
+const { params: _urlOverrides, isoLevels: _urlIsoLevels, camera: _urlCamera } = readFromUrl();
+// Merge nested objects first (before top-level assign) so params.particles /
+// params.aurora are not replaced wholesale — only the keys present in the URL
+// are overwritten, leaving the rest at their defaults.
+if (_urlOverrides.particles) { Object.assign(params.particles, _urlOverrides.particles); delete _urlOverrides.particles; }
+if (_urlOverrides.aurora)    { Object.assign(params.aurora,    _urlOverrides.aurora);    delete _urlOverrides.aurora;    }
+Object.assign(params, _urlOverrides);
 
 /**
  * Populate isoLevels based on current mode.
@@ -178,6 +187,11 @@ const { sunLight } = setupLighting(scene);
 const sun = createSun(scene);
 const moon = createMoon(scene);
 const controls = setupControls(camera, renderer);
+if (_urlCamera) {
+  camera.position.set(_urlCamera.x, _urlCamera.y, _urlCamera.z);
+  controls.update();
+}
+controls.addEventListener('change', () => scheduleUrlWrite(params, camera));
 
 // --- Clipping planes ---
 const clipping = createClippingPlanes();
@@ -425,6 +439,7 @@ function applyVisualChanges() {
     fieldLineGroup.visible = params.showFieldLines;
   }
   controls.autoRotate = params.autoRotate;
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Isosurface state ---
@@ -435,7 +450,6 @@ let cachedBGridResolution = null;
 let cachedLShellGrid = null;
 let cachedLShellMaxDegree = null;
 let cachedLShellResolution = null;
-let cachedLShellSolarWindEnabled = false;
 let isosurfaceGroup = null;
 
 // --- Radiation belt state ---
@@ -482,6 +496,7 @@ function getCachedIsoGrid(degree, res) {
  * Request the appropriate grid from the Worker, then extract and render isosurfaces.
  */
 function rebuildIsosurfaces() {
+  scheduleUrlWrite(params, camera);
   if (!params.showIsosurfaces || !coeffs) return;
 
   // When mode changes, rebuild level toggles
@@ -605,114 +620,83 @@ function applyIsoVisualChanges() {
   if (isosurfaceGroup) {
     updateIsosurfaceOpacity(isosurfaceGroup, params.isoOpacity);
   }
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Radiation Belt functions ---
 
 /**
- * Request L-shell grid from Worker, then extract and render belt surfaces.
+ * Build and render radiation belt meshes using analytic dipole geometry.
+ * Runs synchronously (no worker needed) — geometry is fully procedural.
  */
 function rebuildRadiationBelts() {
   if ((!params.showInnerBelt && !params.showOuterBelt) || !coeffs) return;
-
-  const res = Number(params.isoResolution);
-  const degree = params.maxDegree;
-
-  // Cache is only valid for pure-IGRF. Solar wind grids must recompute on every call
-  // because L-shell geometry changes with real-time solar wind conditions.
-  const swActive = params.solarWindEnabled;
-  if (!swActive
-      && cachedLShellGrid
-      && cachedLShellMaxDegree === degree
-      && cachedLShellResolution === res
-      && !cachedLShellSolarWindEnabled) {
-    extractAndRenderBelts();
-    return;
-  }
-
-  showIsoLoading(true, 'Computing L-shell field...');
-
-  const worker = getOrCreateWorker();
-
-  worker.onmessage = (e) => {
-    if (e.data.type === 'progress') {
-      updateIsoProgress(e.data.percent, 'L-shell');
-    } else if (e.data.type === 'lshellGridReady') {
-      cachedLShellGrid = e.data.grid;
-      cachedLShellMaxDegree = degree;
-      cachedLShellResolution = e.data.resolution;
-      cachedLShellSolarWindEnabled = params.solarWindEnabled;
-      showIsoLoading(false);
-      extractAndRenderBelts();
-    }
-  };
-
-  worker.postMessage({
-    type: 'computeLShellGrid',
-    coeffs,
-    maxDegree: degree,
-    resolution: res,
-    boundsMin: GRID_BOUNDS_MIN,
-    boundsMax: GRID_BOUNDS_MAX,
-    solarWindParams: swActive ? getSolarWindParams() : undefined,
-  });
+  buildAndRenderBelts();
+  scheduleUrlWrite(params, camera);
 }
 
 /**
- * Extract radiation belt boundaries from cached L-shell grid and render.
+ * Quaternion that rotates the geographic Y-axis to the IGRF magnetic dipole axis.
+ * Degree-1 Gauss coefficients define the dipole direction in scene coords (Y=north):
+ *   dipole axis ∝ (g[1][1], g[1][0], h[1][1])
+ * Returns identity quaternion if coeffs are unavailable.
  */
-function extractAndRenderBelts() {
-  if (!cachedLShellGrid) return;
+function getDipoleQuaternion() {
+  const q = new THREE.Quaternion();
+  if (coeffs?.g?.[1]) {
+    const g10 = coeffs.g[1][0];
+    const g11 = coeffs.g[1][1];
+    const h11 = coeffs.h?.[1]?.[1] ?? 0;
+    // Negate: (g11, g10, h11) points toward magnetic south (~107°E, near -Y).
+    // We want the axis toward magnetic north (~287°E, near +Y) for a well-conditioned
+    // ~10° rotation rather than a degenerate ~170° rotation with an arbitrary axis.
+    const dipoleAxis = new THREE.Vector3(-g11, -g10, -h11).normalize();
+    q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dipoleAxis);
+  }
+  return q;
+}
 
+/**
+ * Apply the IGRF dipole tilt to the particle mesh so particles align with belt geometry.
+ * Particles are computed in the pure-dipole Y-axis frame; this rotation matches them
+ * to the tilted frame used by the belt group and L-shell isosurfaces.
+ */
+function applyDipoleTiltToParticles() {
+  if (particleSystem) {
+    particleSystem.mesh.quaternion.copy(getDipoleQuaternion());
+  }
+}
+
+function buildAndRenderBelts() {
   if (radiationBeltGroup) {
     scene.remove(radiationBeltGroup);
     disposeRadiationBeltGroup(radiationBeltGroup);
     radiationBeltGroup = null;
   }
 
-  const beltSurfaces = [];
+  if (!params.showInnerBelt && !params.showOuterBelt) return;
 
-  for (const def of BELT_DEFINITIONS) {
-    const showBelt =
-      (def.name === 'innerBelt' && params.showInnerBelt) ||
-      (def.name === 'outerBelt' && params.showOuterBelt);
-
-    if (!showBelt) continue;
-
-    const surfaces = [];
-    const inner = extractIsosurface(
-      cachedLShellGrid,
-      cachedLShellResolution,
-      GRID_BOUNDS_MIN,
-      GRID_BOUNDS_MAX,
-      def.lMin
-    );
-    surfaces.push(inner);
-
-    const outer = extractIsosurface(
-      cachedLShellGrid,
-      cachedLShellResolution,
-      GRID_BOUNDS_MIN,
-      GRID_BOUNDS_MAX,
-      def.lMax
-    );
-    surfaces.push(outer);
-
-    beltSurfaces.push({ name: def.name, surfaces });
-  }
-
-  if (beltSurfaces.length === 0) return;
-
+  const sunLonRad = params.sunLongitude * Math.PI / 180;
   const activePlanes = clipping.getActivePlanes(
     params.clipEquatorial,
     params.clipMeridional
   );
 
-  radiationBeltGroup = buildRadiationBeltGroup(beltSurfaces, {
+  radiationBeltGroup = buildRadiationBeltGroup({
+    showInnerBelt: params.showInnerBelt,
+    showOuterBelt: params.showOuterBelt,
     clippingPlanes: activePlanes,
     opacity: params.beltOpacity,
+    sunDirX: Math.cos(sunLonRad),
+    sunDirZ: Math.sin(sunLonRad),
+    stormIntensity: Math.min(1, Math.abs(params.dst) / 150),
   });
+
+  radiationBeltGroup.quaternion.copy(getDipoleQuaternion());
   scene.add(radiationBeltGroup);
+
+  // Keep particle mesh in the same tilted frame as the belt geometry.
+  applyDipoleTiltToParticles();
 }
 
 function applyBeltVisualChanges() {
@@ -725,12 +709,8 @@ function applyBeltVisualChanges() {
     return;
   }
 
-  if (cachedLShellGrid) {
-    extractAndRenderBelts();
-  }
-  if (radiationBeltGroup) {
-    updateBeltOpacity(radiationBeltGroup, params.beltOpacity);
-  }
+  buildAndRenderBelts();
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Clipping ---
@@ -758,6 +738,7 @@ function applyClipChanges() {
       }
     });
   }
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Loading indicator ---
@@ -800,9 +781,12 @@ function updateSatelliteProbe() {
   satellite.setPosition(pos.x, pos.y, pos.z);
   satellite.setVisible(true);
 
+  const swParams = getSolarWindParams();
   const env = computeMagneticEnvironment(
-    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree, getSolarWindParams()
+    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree, swParams
   );
+  const kp = computeKp(swParams);
+  const flux = computeBeltFlux(kp, swParams?.dst ?? 0);
 
   updateEnvironmentReadout({
     latDeg: params.satLatitude,
@@ -812,7 +796,13 @@ function updateSatelliteProbe() {
     lShell: env.lShell,
     region: env.region,
     saaProximity: env.saaProximity,
+    kp,
+    swEnabled: swParams?.enabled ?? false,
+    innerFlux: flux.innerFlux,
+    outerFlux: flux.outerFlux,
+    slotFlux: flux.slotFlux,
   }, 'Satellite Probe');
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Day animation (Three.js keyframe system for sun and moon) ---
@@ -924,6 +914,7 @@ function updateDatetime(isPeriodicUpdate = false) {
     if (params.showSatellite) updateSatelliteProbe();
     if (params.showMagnetopause) rebuildMagnetopause();
   }
+  scheduleUrlWrite(params, camera);
 }
 
 /**
@@ -982,6 +973,7 @@ function onSolarWindChange() {
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   if (params.showSatellite) updateSatelliteProbe();
   if (params.showMagnetopause) rebuildMagnetopause();
+  scheduleUrlWrite(params, camera);
 }
 
 // --- Magnetopause mesh state ---
@@ -1012,13 +1004,14 @@ function rebuildMagnetopause() {
 
 function onMagnetopauseChange() {
   rebuildMagnetopause();
+  scheduleUrlWrite(params, camera);
 }
 
 // --- UI ---
 createInfoOverlay();
 let timeline; // declared before GUI so lightUpdateDatetime can reference it
 const { gui, refreshSolarWindControls } = createControlPanel(params, {
-  onRebuild: () => rebuildFieldLines(1000),
+  onRebuild: () => { rebuildFieldLines(1000); scheduleUrlWrite(params, camera); },
   onVisualChange: applyVisualChanges,
   onIsoRebuild: () => rebuildIsosurfaces(),
   onIsoVisualChange: applyIsoVisualChanges,
@@ -1030,9 +1023,15 @@ const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onMagnetopauseChange,
   // Particle / aurora changes are handled by the per-frame update() calls;
   // no expensive rebuilds are needed when the user changes these params.
-  onParticleChange: () => {},
-  onAuroraChange:   () => {},
+  onParticleChange: () => scheduleUrlWrite(params, camera),
+  onAuroraChange:   () => scheduleUrlWrite(params, camera),
 });
+
+// Re-apply isoLevels from URL now that initIsoLevels() has populated the keys.
+if (_urlIsoLevels) {
+  applyIsoLevelsFromUrl(params, _urlIsoLevels);
+  applyIsoVisualChanges();
+}
 
 timeline = createTimeline({
   initialTime:       new Date(params.datetimeString),
@@ -1062,7 +1061,7 @@ window.addEventListener('resize', () => {
 // --- Animation loop ---
 let lastFrameTime = 0;
 
-function animate(now) {
+function animate(now = performance.now()) {
   requestAnimationFrame(animate);
   // Real-time delta (capped to avoid large jumps after tab visibility changes).
   const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
@@ -1094,15 +1093,16 @@ function animate(now) {
 
 // --- Init ---
 async function init() {
-  // Load January 2026 first so the default date (2026-01-01) has data immediately.
+  // Load date first so the default date (2025-11-01) has data immediately.
   // Neighboring months load in the background as the user navigates.
   await Promise.all([
     loadCoefficients(),
-    loadMonth(2026, 1),
+    loadMonth(2025, 11),
   ]);
 
   // Create particle system and aurora (after scene is ready)
   particleSystem = createParticleSystem(scene);
+  applyDipoleTiltToParticles();
   auroraRenderer = createAuroraRenderer(scene);
   setSolarWindDataNote('Solar wind: Qin-Denton/WGhour.d (2026)');
   const initUnix = Math.floor(new Date(params.datetimeString).getTime() / 1000);

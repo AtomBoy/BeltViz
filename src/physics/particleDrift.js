@@ -108,8 +108,8 @@ export function injectionRate(dst) {
  * @returns {{ lMin: number, lMax: number }}
  */
 export function outerBeltLRange(dst) {
-  if (dst >= -20)  return { lMin: 3.5, lMax: 5.5 };
-  if (dst >= -50)  return { lMin: 3.0, lMax: 5.0 };
+  if (dst >= -20)  return { lMin: 3.0, lMax: 4.5 };
+  if (dst >= -50)  return { lMin: 2.8, lMax: 4.5 };
   if (dst >= -150) return { lMin: 2.5, lMax: 4.5 };
   return                   { lMin: 2.0, lMax: 4.0 };
 }

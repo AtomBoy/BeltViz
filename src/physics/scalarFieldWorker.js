@@ -138,6 +138,7 @@ function computeLShellGrid(coeffs, maxDegree, resolution, boundsMin, boundsMax, 
           const tanLambda = Math.abs(Br) / (2 * Bperp);
           const cosLambda2 = 1 / (1 + tanLambda * tanLambda);
           const L = (r / EARTH_RADIUS_KM) / cosLambda2;
+
           // In the magnetotail, the dipole L formula yields unreliable values above L≈11.
           // Cap these cells so the marching cubes surface doesn't extend into the far tail.
           grid[idx] = (useSolarWind && L > 11) ? Infinity : L;
