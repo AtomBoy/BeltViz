@@ -9,7 +9,8 @@
       "mcp__playwright__browser_evaluate",
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:www.space-track.org)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(gh pr list)"
     ]
   }
 }

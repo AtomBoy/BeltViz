@@ -930,7 +930,7 @@ function applyDataSolarWind(unixSeconds) {
   if (sw.G2  !== null) params.g2               = Math.max(0, sw.G2);
   params._solarPreset = 'Historical Data';
   refreshSolarWindControls();
-  if (timeline) timeline.updateKpBadge(computeKp(getSolarWindParams()));
+  if (timeline) { const swp = getSolarWindParams(); timeline.updateGauges(computeKp(swp), swp?.dst ?? 0, swp?.imfBz ?? 0); }
 }
 
 /**
@@ -967,7 +967,7 @@ function onSolarWindChange() {
   if (params.showIsosurfaces) rebuildIsosurfaces();
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   if (params.showMagnetopause) rebuildMagnetopause();
-  if (timeline) timeline.updateKpBadge(computeKp(getSolarWindParams()));
+  if (timeline) { const swp = getSolarWindParams(); timeline.updateGauges(computeKp(swp), swp?.dst ?? 0, swp?.imfBz ?? 0); }
   scheduleUrlWrite(params, camera);
 }
 

@@ -124,40 +124,36 @@ function injectStyles() {
       flex-shrink: 0;
     }
     #tl-legend {
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 5px;
-      padding: 0 14px; flex-shrink: 0; width: 180px;
+      display: flex; flex-direction: column; align-items: stretch;
+      justify-content: center; gap: 7px;
+      padding: 0 14px; flex-shrink: 0; width: 190px;
       border-left: 1px solid rgba(100, 150, 200, 0.2);
     }
-    #tl-legend-header {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%; gap: 6px;
+    .tl-gauge {
+      display: flex; align-items: center; gap: 6px; cursor: default;
     }
-    #tl-legend-title {
-      font-size: 10px; color: #7799bb; letter-spacing: .03em;
-      white-space: nowrap;
+    .tl-gauge-lbl {
+      font-size: 10px; color: #7799bb; letter-spacing: .05em; text-transform: uppercase;
+      width: 20px; flex-shrink: 0; text-align: right;
     }
-    #tl-kp-badge {
-      font-size: 11px; font-weight: bold;
-      font-family: 'Courier New', monospace;
-      padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
-      background: rgba(30, 120, 60, 0.5); color: #88cc88;
-      border: 1px solid rgba(80, 180, 80, 0.3);
-      white-space: nowrap;
+    .tl-gauge-num {
+      font-size: 11px; font-weight: bold; font-family: 'Courier New', monospace;
+      width: 48px; flex-shrink: 0; text-align: right; transition: color 0.3s;
     }
-    #tl-legend-row {
-      display: flex; align-items: center; gap: 6px; width: 100%;
+    .tl-gauge-track {
+      flex: 1; height: 5px; border-radius: 3px; position: relative;
+      background: rgba(100, 150, 200, 0.12);
     }
-    .tl-legend-end {
-      font-size: 9px; color: #556677; white-space: nowrap; flex-shrink: 0;
+    .tl-gauge-fill {
+      position: absolute; top: 0; left: 0; height: 100%; border-radius: 3px;
+      transition: width 0.4s ease, background 0.4s ease;
+      min-width: 0;
     }
-    #tl-legend-gradient {
-      flex: 1; height: 7px; border-radius: 3px;
-      background: linear-gradient(to right,
-        rgb(0,40,120),
-        rgb(180,100,30),
-        rgb(210,20,20));
-      opacity: 0.85;
+    .tl-gauge-marker {
+      position: absolute; top: -3px; width: 2px; height: 11px; border-radius: 1px;
+      background: rgba(220, 230, 255, 0.8);
+      transform: translateX(-50%);
+      transition: left 0.4s ease;
     }
   `;
   document.head.appendChild(style);
@@ -208,16 +204,34 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
       </select>
       <button class="tl-btn" id="tl-now" title="Jump to now">Now</button>
     </div>
-    <div id="tl-bar"></div>
+    <div id="tl-bar" title="Timeline background color: storm intensity derived from Dst ring-current index + IMF Bz (southward field coupling). Blue = quiet, amber = moderate, red = severe."></div>
     <div id="tl-legend">
-      <div id="tl-legend-header">
-        <span id="tl-legend-title">Solar wind · Dst</span>
-        <span id="tl-kp-badge">Kp –</span>
+      <div class="tl-gauge" id="tl-gauge-kp"
+           title="Kp index (0–9): overall geomagnetic activity level derived from solar wind speed, density, and Dst. Green (Kp &lt; 3) = quiet conditions. Amber (3–5) = moderate storm, elevated radiation belt activity. Red (&gt; 5) = severe geomagnetic storm — outer belt intensifies, aurora visible at lower latitudes.">
+        <span class="tl-gauge-lbl">Kp</span>
+        <span class="tl-gauge-num" id="tl-kp-val">–</span>
+        <div class="tl-gauge-track">
+          <div class="tl-gauge-fill" id="tl-kp-fill"></div>
+          <div class="tl-gauge-marker" id="tl-kp-mk"></div>
+        </div>
       </div>
-      <div id="tl-legend-row">
-        <span class="tl-legend-end">quiet</span>
-        <div id="tl-legend-gradient"></div>
-        <span class="tl-legend-end">storm</span>
+      <div class="tl-gauge" id="tl-gauge-dst"
+           title="Dst index (nT): disturbance storm time — measures the global ring current in the inner magnetosphere. Near 0 = quiet. −50 nT = moderate storm. −150 nT = intense storm (outer belt electrons injected, slot region fills). Background colors on the timeline reflect Dst + IMF Bz.">
+        <span class="tl-gauge-lbl">Dst</span>
+        <span class="tl-gauge-num" id="tl-dst-val">– nT</span>
+        <div class="tl-gauge-track">
+          <div class="tl-gauge-fill" id="tl-dst-fill"></div>
+          <div class="tl-gauge-marker" id="tl-dst-mk"></div>
+        </div>
+      </div>
+      <div class="tl-gauge" id="tl-gauge-bz"
+           title="IMF Bz (nT): interplanetary magnetic field north–south component. Southward (negative) Bz opens the magnetopause via magnetic reconnection — the primary trigger for geomagnetic storms. +20 nT = strongly northward (protective). −20 nT = strongly southward (storm driver). Values below −5 nT are significant.">
+        <span class="tl-gauge-lbl">Bz</span>
+        <span class="tl-gauge-num" id="tl-bz-val">– nT</span>
+        <div class="tl-gauge-track">
+          <div class="tl-gauge-fill" id="tl-bz-fill"></div>
+          <div class="tl-gauge-marker" id="tl-bz-mk"></div>
+        </div>
       </div>
     </div>
   `;
@@ -228,7 +242,15 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   const elTime    = container.querySelector('#tl-time');
   const elPlayBtn = container.querySelector('#tl-play');
   const bar       = container.querySelector('#tl-bar');
-  const elKpBadge = container.querySelector('#tl-kp-badge');
+  const elKpVal   = container.querySelector('#tl-kp-val');
+  const elKpFill  = container.querySelector('#tl-kp-fill');
+  const elKpMk    = container.querySelector('#tl-kp-mk');
+  const elDstVal  = container.querySelector('#tl-dst-val');
+  const elDstFill = container.querySelector('#tl-dst-fill');
+  const elDstMk   = container.querySelector('#tl-dst-mk');
+  const elBzVal   = container.querySelector('#tl-bz-val');
+  const elBzFill  = container.querySelector('#tl-bz-fill');
+  const elBzMk    = container.querySelector('#tl-bz-mk');
 
   // Canvas for solar wind intensity background
   const swCanvas = document.createElement('canvas');
@@ -464,25 +486,45 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
     },
 
     /**
-     * Update the Kp index badge color and value.
-     * @param {number} kp - Kp index (0–9)
+     * Update the Kp and Dst gauge bars with current values.
+     * @param {number} kp  - Kp index (0–9)
+     * @param {number} dst - Dst index in nT (negative during storms)
      */
-    updateKpBadge(kp) {
-      if (!elKpBadge) return;
-      elKpBadge.textContent = `Kp ${(kp ?? 0).toFixed(1)}`;
-      const s = elKpBadge.style;
-      if (kp < 3) {
-        s.background   = 'rgba(30,120,60,0.5)';
-        s.color        = '#88cc88';
-        s.borderColor  = 'rgba(80,180,80,0.3)';
-      } else if (kp < 5) {
-        s.background   = 'rgba(160,90,20,0.5)';
-        s.color        = '#ddaa44';
-        s.borderColor  = 'rgba(200,140,40,0.3)';
-      } else {
-        s.background   = 'rgba(150,30,30,0.5)';
-        s.color        = '#ff6644';
-        s.borderColor  = 'rgba(200,60,60,0.3)';
+    updateGauges(kp, dst, bz) {
+      // ── Kp gauge (0–9 scale) ──────────────────────────────────────────────
+      if (elKpVal && elKpFill && elKpMk) {
+        const kpSafe  = kp ?? 0;
+        const kpPct   = Math.min(1, Math.max(0, kpSafe / 9)) * 100;
+        const kpColor = kpSafe < 3 ? '#44aa66' : kpSafe < 5 ? '#cc8822' : '#cc3333';
+        elKpVal.textContent       = kpSafe.toFixed(1);
+        elKpVal.style.color       = kpColor;
+        elKpFill.style.width      = kpPct + '%';
+        elKpFill.style.background = kpColor;
+        elKpMk.style.left         = kpPct + '%';
+      }
+
+      // ── Dst gauge (storm intensity, 0=quiet → 1 at Dst=−200) ─────────────
+      if (elDstVal && elDstFill && elDstMk) {
+        const dstSafe   = dst ?? 0;
+        const stormFrac = Math.min(1, Math.max(0, -dstSafe / 200));
+        const dstColor  = dstSafe > -50 ? '#4488aa' : dstSafe > -100 ? '#cc8822' : '#cc3333';
+        elDstVal.textContent       = `${Math.round(dstSafe)} nT`;
+        elDstVal.style.color       = dstColor;
+        elDstFill.style.width      = (stormFrac * 100) + '%';
+        elDstFill.style.background = dstColor;
+        elDstMk.style.left         = (stormFrac * 100) + '%';
+      }
+
+      // ── IMF Bz gauge (southward = storm driver; fill grows as Bz goes negative) ──
+      if (elBzVal && elBzFill && elBzMk) {
+        const bzSafe    = bz ?? 0;
+        const southFrac = Math.min(1, Math.max(0, -bzSafe / 20));
+        const bzColor   = bzSafe > -5 ? '#4488aa' : bzSafe > -10 ? '#cc8822' : '#cc3333';
+        elBzVal.textContent       = `${bzSafe >= 0 ? '+' : ''}${bzSafe.toFixed(1)} nT`;
+        elBzVal.style.color       = bzSafe > 0 ? '#557799' : bzColor;
+        elBzFill.style.width      = (southFrac * 100) + '%';
+        elBzFill.style.background = bzColor;
+        elBzMk.style.left         = (southFrac * 100) + '%';
       }
     },
 
