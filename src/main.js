@@ -928,7 +928,9 @@ function applyDataSolarWind(unixSeconds) {
   if (sw.Dst !== null) params.dst              = Math.min(50,  Math.max(-200, Math.round(sw.Dst)));
   if (sw.G1  !== null) params.g1               = Math.max(0, sw.G1);
   if (sw.G2  !== null) params.g2               = Math.max(0, sw.G2);
+  params._solarPreset = 'Historical Data';
   refreshSolarWindControls();
+  if (timeline) timeline.updateKpBadge(computeKp(getSolarWindParams()));
 }
 
 /**
@@ -965,6 +967,7 @@ function onSolarWindChange() {
   if (params.showIsosurfaces) rebuildIsosurfaces();
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   if (params.showMagnetopause) rebuildMagnetopause();
+  if (timeline) timeline.updateKpBadge(computeKp(getSolarWindParams()));
   scheduleUrlWrite(params, camera);
 }
 

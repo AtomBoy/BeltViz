@@ -129,9 +129,21 @@ function injectStyles() {
       padding: 0 14px; flex-shrink: 0; width: 180px;
       border-left: 1px solid rgba(100, 150, 200, 0.2);
     }
+    #tl-legend-header {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; gap: 6px;
+    }
     #tl-legend-title {
-      font-size: 12px; color: #7799bb; letter-spacing: .03em;
-      white-space: nowrap; text-align: center;
+      font-size: 10px; color: #7799bb; letter-spacing: .03em;
+      white-space: nowrap;
+    }
+    #tl-kp-badge {
+      font-size: 11px; font-weight: bold;
+      font-family: 'Courier New', monospace;
+      padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
+      background: rgba(30, 120, 60, 0.5); color: #88cc88;
+      border: 1px solid rgba(80, 180, 80, 0.3);
+      white-space: nowrap;
     }
     #tl-legend-row {
       display: flex; align-items: center; gap: 6px; width: 100%;
@@ -181,12 +193,12 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   container.id = 'timeline';
   container.innerHTML = `
     <div id="tl-controls">
-      <button class="tl-btn" id="tl-prev" title="Previous week">◀</button>
+      <button class="tl-btn" id="tl-prev" title="Previous week">⏮</button>
       <div id="tl-clock">
         <div id="tl-date"></div>
         <div id="tl-time"></div>
       </div>
-      <button class="tl-btn" id="tl-next" title="Next week">▶</button>
+      <button class="tl-btn" id="tl-next" title="Next week">⏭</button>
       <button class="tl-btn" id="tl-play" title="Play / Pause">▶</button>
       <select class="tl-select" id="tl-speed" title="Playback speed">
         <option value="1">1×</option>
@@ -198,7 +210,10 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
     </div>
     <div id="tl-bar"></div>
     <div id="tl-legend">
-      <div id="tl-legend-title">Solar wind intensity · Dst</div>
+      <div id="tl-legend-header">
+        <span id="tl-legend-title">Solar wind · Dst</span>
+        <span id="tl-kp-badge">Kp –</span>
+      </div>
       <div id="tl-legend-row">
         <span class="tl-legend-end">quiet</span>
         <div id="tl-legend-gradient"></div>
@@ -213,6 +228,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   const elTime    = container.querySelector('#tl-time');
   const elPlayBtn = container.querySelector('#tl-play');
   const bar       = container.querySelector('#tl-bar');
+  const elKpBadge = container.querySelector('#tl-kp-badge');
 
   // Canvas for solar wind intensity background
   const swCanvas = document.createElement('canvas');
@@ -445,6 +461,29 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
      */
     refreshColors() {
       paintSolarWind();
+    },
+
+    /**
+     * Update the Kp index badge color and value.
+     * @param {number} kp - Kp index (0–9)
+     */
+    updateKpBadge(kp) {
+      if (!elKpBadge) return;
+      elKpBadge.textContent = `Kp ${(kp ?? 0).toFixed(1)}`;
+      const s = elKpBadge.style;
+      if (kp < 3) {
+        s.background   = 'rgba(30,120,60,0.5)';
+        s.color        = '#88cc88';
+        s.borderColor  = 'rgba(80,180,80,0.3)';
+      } else if (kp < 5) {
+        s.background   = 'rgba(160,90,20,0.5)';
+        s.color        = '#ddaa44';
+        s.borderColor  = 'rgba(200,140,40,0.3)';
+      } else {
+        s.background   = 'rgba(150,30,30,0.5)';
+        s.color        = '#ff6644';
+        s.borderColor  = 'rgba(200,60,60,0.3)';
+      }
     },
 
     destroy() {
