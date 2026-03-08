@@ -15,7 +15,8 @@ export function createControlPanel(params, callbacks) {
     onClipChange,
     onBeltRebuild,
     onBeltVisualChange,
-    onSatelliteChange,
+    onSatelliteSwarmChange = () => {},
+    onSatelliteSearchOpen  = () => {},
     onSolarWindChange,
     onMagnetopauseChange,
     // Particle and aurora changes are handled by per-frame update() calls in main.js.
@@ -102,14 +103,6 @@ export function createControlPanel(params, callbacks) {
     .onChange(onClipChange);
   clipFolder.close();
 
-  // --- Satellite Probe folder ---
-  const satFolder = gui.addFolder('Satellite Probe');
-  satFolder.add(params, 'showSatellite').name('Show Probe').onChange(onSatelliteChange);
-  satFolder.add(params, 'satLatitude', -90, 90, 0.5).name('Latitude').onChange(onSatelliteChange);
-  satFolder.add(params, 'satLongitude', -180, 180, 0.5).name('Longitude').onChange(onSatelliteChange);
-  satFolder.add(params, 'satAltitude', 200, 36000, 50).name('Altitude (km)').onChange(onSatelliteChange);
-  satFolder.close();
-
   // --- Solar Wind folder ---
   const solarFolder = gui.addFolder('Solar Wind');
 
@@ -179,6 +172,40 @@ export function createControlPanel(params, callbacks) {
 
   particleFolder.close();
   auroraFolder.close();
+
+  // --- Satellites folder ---
+  const satFolder = gui.addFolder('Satellites');
+  satFolder.add(params.satellites, 'enabled').name('Show Satellites').onChange(onSatelliteSwarmChange);
+
+  const cLeo = satFolder.add(params.satellites, 'showLeo').name('LEO').onChange(onSatelliteSwarmChange);
+  cLeo.$name.innerHTML = '<span style="color:#c8d8f0">●</span> LEO';
+  const cMeo = satFolder.add(params.satellites, 'showMeo').name('MEO').onChange(onSatelliteSwarmChange);
+  cMeo.$name.innerHTML = '<span style="color:#44eebb">●</span> MEO';
+  const cGeo = satFolder.add(params.satellites, 'showGeo').name('GEO').onChange(onSatelliteSwarmChange);
+  cGeo.$name.innerHTML = '<span style="color:#ffdd44">●</span> GEO';
+  const cHeo = satFolder.add(params.satellites, 'showHeo').name('HEO').onChange(onSatelliteSwarmChange);
+  cHeo.$name.innerHTML = '<span style="color:#ee66ff">●</span> HEO';
+  const cOther = satFolder.add(params.satellites, 'showOther').name('Other').onChange(onSatelliteSwarmChange);
+  cOther.$name.innerHTML = '<span style="color:#888888">●</span> Other';
+
+  satFolder.add(params.satellites, 'notableOnly').name('Notable Only').onChange(onSatelliteSwarmChange);
+
+  // Inject a plain button to open the satellite search panel
+  const searchBtn = document.createElement('button');
+  searchBtn.id = 'sat-open-btn';
+  searchBtn.textContent = 'Search / Select Satellite';
+  searchBtn.style.cssText = [
+    'width:100%', 'box-sizing:border-box', 'margin:4px 0', 'padding:5px 8px',
+    'background:rgba(30,50,80,0.7)', 'color:#88ccff',
+    'border:1px solid rgba(100,150,200,0.35)', 'border-radius:4px',
+    'cursor:pointer', 'font-family:var(--font-family)', 'font-size:11px',
+  ].join(';');
+  searchBtn.addEventListener('mouseenter', () => { searchBtn.style.background = 'rgba(50,80,120,0.8)'; });
+  searchBtn.addEventListener('mouseleave', () => { searchBtn.style.background = 'rgba(30,50,80,0.7)'; });
+  searchBtn.addEventListener('click', onSatelliteSearchOpen);
+  satFolder.$children.appendChild(searchBtn);
+
+  satFolder.close();
 
   /**
    * Refresh only the four solar wind value sliders.

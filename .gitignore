@@ -6,3 +6,6 @@ public/data/omni2_all_years.dat
 images/
 .playwright-mcp/
 .claude/settings.json
+dev_docs/v9.1.1.0_C_Sgp4Prop_Wasm
+public/data/tle2025.txt
+dev_docs/Space-Track.org.API.pdf

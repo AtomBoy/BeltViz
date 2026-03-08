@@ -1,6 +1,6 @@
 {
   "name": "beltviz",
-  "version": "0.1.0",
+  "version": "0.12.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    
     "lil-gui": "^0.20.0",
     "three": "^0.172.0"
   },

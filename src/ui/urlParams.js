@@ -33,10 +33,6 @@ const DEFAULTS = {
   clipEquatorial:      false,
   clipMeridional:      false,
   clipMeridionalAngle: 0,
-  showSatellite:       false,
-  satLatitude:         0,
-  satLongitude:        0,
-  satAltitude:         400,
   solarWindEnabled:    true,
   solarWindSpeed:      400,
   solarWindDensity:    5,
@@ -53,6 +49,8 @@ const DEFAULTS = {
   // nested — aurora
   aEnabled:            false,
   aOpacity:            1.0,
+  // nested — satellite swarm
+  satSwarm:            false,
   // isoLevels default active set (L-shell mode defaults: L=2,4,6,10 on — matches initIsoLevels())
   isoLevels:           '2,4,6,10',
 };
@@ -103,12 +101,6 @@ export function readFromUrl() {
   if (sp.has('clipMer'))     out.clipMeridional      = bool('clipMer');
   if (sp.has('clipAngle'))   { const v = num('clipAngle'); if (v !== null) out.clipMeridionalAngle = v; }
 
-  // Satellite
-  if (sp.has('showSat'))     out.showSatellite  = bool('showSat');
-  if (sp.has('satLat'))      { const v = num('satLat');  if (v !== null) out.satLatitude  = v; }
-  if (sp.has('satLon'))      { const v = num('satLon');  if (v !== null) out.satLongitude = v; }
-  if (sp.has('satAlt'))      { const v = num('satAlt');  if (v !== null) out.satAltitude  = v; }
-
   // Solar wind
   if (sp.has('sw'))          out.solarWindEnabled = bool('sw');
   if (sp.has('vSw'))         { const v = num('vSw');  if (v !== null) out.solarWindSpeed   = v; }
@@ -132,6 +124,14 @@ export function readFromUrl() {
   if (sp.has('aurora'))      aurora.enabled = bool('aurora');
   if (sp.has('auroraOp'))    { const v = num('auroraOp'); if (v !== null) aurora.opacity = v; }
   if (Object.keys(aurora).length) out.aurora = aurora;
+
+  // Satellite swarm (nested)
+  const satellites = {};
+  if (sp.has('satSwarm'))    satellites.enabled = bool('satSwarm');
+  if (Object.keys(satellites).length) out.satellites = satellites;
+
+  // Selected satellite — transient key (_satSelected) used by main.js after catalog loads
+  if (sp.has('satSelected')) { const v = num('satSelected'); if (v !== null) out._satSelected = v; }
 
   // isoLevels — returned separately, applied after initIsoLevels() runs
   const isoLevels = sp.has('isoLevels') ? str('isoLevels') : null;
@@ -222,11 +222,6 @@ function _doWrite(params, camera) {
   set('clipMer',   params.clipMeridional,      d.clipMeridional);
   set('clipAngle', params.clipMeridionalAngle, d.clipMeridionalAngle);
 
-  // Satellite
-  set('showSat', params.showSatellite, d.showSatellite);
-  set('satLat',  params.satLatitude,   d.satLatitude);
-  set('satLon',  params.satLongitude,  d.satLongitude);
-  set('satAlt',  params.satAltitude,   d.satAltitude);
 
   // Solar wind
   set('sw',     params.solarWindEnabled,  d.solarWindEnabled);
@@ -247,6 +242,10 @@ function _doWrite(params, camera) {
   // Aurora
   set('aurora',   params.aurora.enabled, d.aEnabled);
   set('auroraOp', params.aurora.opacity, d.aOpacity);
+
+  // Satellite swarm
+  set('satSwarm', params.satellites?.enabled, d.satSwarm);
+  if (params._satSelected >= 0) sp.set('satSelected', String(params._satSelected));
 
   // Camera position (default: 0, 1.5, 4). Written as an atomic unit — all three
   // or none — so that a partial URL (e.g. camX=0 omitted) can never leave the

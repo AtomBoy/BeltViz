@@ -27,8 +27,6 @@ import {
 } from './scene/radiationBelts.js';
 import { computeKp, computeBeltFlux } from './physics/beltFlux.js';
 import { createClippingPlanes } from './scene/clippingPlanes.js';
-import { createSatelliteMarker } from './scene/satelliteMarker.js';
-import { geographicToPhysicsPosition } from './physics/satellitePosition.js';
 import { computeMagneticEnvironment } from './physics/magneticEnvironment.js';
 import { updateEnvironmentReadout, hideEnvironmentReadout } from './ui/environmentReadout.js';
 import { KM_TO_SCENE } from './utils/constants.js';
@@ -37,6 +35,14 @@ import { setSolarWindDataNote } from './ui/infoOverlay.js';
 import { createParticleSystem } from './scene/particleSystem.js';
 import { createAuroraRenderer } from './scene/auroraRenderer.js';
 import { readFromUrl, applyIsoLevelsFromUrl, scheduleUrlWrite } from './ui/urlParams.js';
+import { createSatelliteSwarm } from './scene/satelliteSwarm.js';
+import {
+  initSatellitePanel,
+  toggleSatellitePanel,
+  updateSatelliteFilter,
+  setSatellitePanelSelection,
+} from './ui/satellitePanel.js';
+import { findSatelliteIndex, periodFromLine2 } from './ui/satelliteSearchState.js';
 
 // --- Params (mutable, controlled by GUI) ---
 const params = {
@@ -61,10 +67,6 @@ const params = {
   clipMeridional: false,
   clipMeridionalAngle: 0,
   // Satellite probe params
-  showSatellite: false,
-  satLatitude: 0,
-  satLongitude: 0,
-  satAltitude: 400,
   // Solar wind params
   solarWindEnabled: true,
   solarWindSpeed: 400,
@@ -92,6 +94,16 @@ const params = {
     enabled: false,
     opacity: 1.0,
   },
+  // Satellite swarm
+  satellites: {
+    enabled:     false,
+    showLeo:     true,
+    showMeo:     true,
+    showGeo:     true,
+    showHeo:     true,
+    showOther:   false,
+    notableOnly: true,
+  },
 };
 
 // Apply URL hash overrides to params before GUI initialises so sliders start
@@ -100,8 +112,9 @@ const { params: _urlOverrides, isoLevels: _urlIsoLevels, camera: _urlCamera } = 
 // Merge nested objects first (before top-level assign) so params.particles /
 // params.aurora are not replaced wholesale — only the keys present in the URL
 // are overwritten, leaving the rest at their defaults.
-if (_urlOverrides.particles) { Object.assign(params.particles, _urlOverrides.particles); delete _urlOverrides.particles; }
-if (_urlOverrides.aurora)    { Object.assign(params.aurora,    _urlOverrides.aurora);    delete _urlOverrides.aurora;    }
+if (_urlOverrides.particles)  { Object.assign(params.particles,  _urlOverrides.particles);  delete _urlOverrides.particles;  }
+if (_urlOverrides.aurora)     { Object.assign(params.aurora,     _urlOverrides.aurora);     delete _urlOverrides.aurora;     }
+if (_urlOverrides.satellites) { Object.assign(params.satellites, _urlOverrides.satellites); delete _urlOverrides.satellites; }
 Object.assign(params, _urlOverrides);
 
 /**
@@ -195,10 +208,6 @@ controls.addEventListener('change', () => scheduleUrlWrite(params, camera));
 
 // --- Clipping planes ---
 const clipping = createClippingPlanes();
-
-// --- Satellite marker ---
-const satellite = createSatelliteMarker();
-scene.add(satellite.mesh);
 
 // --- Field lines ---
 let fieldLineGroup = null;
@@ -368,7 +377,7 @@ function rebuildFieldLinesFull(tracedLines) {
   fieldLineGroup.visible = params.showFieldLines;
   scene.add(fieldLineGroup);
   fieldLineGroup.children.forEach((mesh, i) => {
-    mesh.userData.isOpen = renderableLines[i].isOpen ?? false;
+    mesh.userData.isOpen = tracedLines[i].isOpen ?? false;
   });
   applyClipChanges(); // restore any active clipping planes to new meshes
 }
@@ -777,47 +786,6 @@ function updateIsoProgress(percent, label) {
   if (el) el.textContent = `Computing ${label || ''} field... ${percent}%`;
 }
 
-// --- Satellite probe ---
-
-function updateSatelliteProbe() {
-  if (!params.showSatellite || !coeffs) {
-    satellite.setVisible(false);
-    hideEnvironmentReadout();
-    return;
-  }
-
-  const pos = geographicToPhysicsPosition(
-    params.satLatitude,
-    params.satLongitude,
-    params.satAltitude
-  );
-  satellite.setPosition(pos.x, pos.y, pos.z);
-  satellite.setVisible(true);
-
-  const swParams = getSolarWindParams();
-  const env = computeMagneticEnvironment(
-    pos.r, pos.theta, pos.phi, coeffs, params.maxDegree, swParams
-  );
-  const kp = computeKp(swParams);
-  const flux = computeBeltFlux(kp, swParams?.dst ?? 0);
-
-  updateEnvironmentReadout({
-    latDeg: params.satLatitude,
-    lonDeg: params.satLongitude,
-    altitudeKm: params.satAltitude,
-    bMagnitude: env.bMagnitude,
-    lShell: env.lShell,
-    region: env.region,
-    saaProximity: env.saaProximity,
-    kp,
-    swEnabled: swParams?.enabled ?? false,
-    innerFlux: flux.innerFlux,
-    outerFlux: flux.outerFlux,
-    slotFlux: flux.slotFlux,
-  }, 'Satellite Probe');
-  scheduleUrlWrite(params, camera);
-}
-
 // --- Day animation (Three.js keyframe system for sun and moon) ---
 
 const SUN_DIST = 120;            // must match globe.js createSun SUN_DISTANCE
@@ -934,9 +902,10 @@ function updateDatetime(isPeriodicUpdate = false) {
     rebuildFieldLines(isPeriodicUpdate ? 8200 : 1000, !isPeriodicUpdate);
     if (params.showIsosurfaces) rebuildIsosurfaces();
     if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
-    if (params.showSatellite) updateSatelliteProbe();
     if (params.showMagnetopause) rebuildMagnetopause();
   }
+  // Force satellite re-propagation to the new simulation time
+  if (params.satellites.enabled && satelliteSwarm) lastPropTime = 0;
   scheduleUrlWrite(params, camera);
 }
 
@@ -973,6 +942,7 @@ function lightUpdateDatetime(isoString) {
 
   params.datetimeString = isoString;
   maybeUpdateIgrf(simTime);
+  maybeUpdateTleMonth(simTime);
 
   const newDay = new Date(simTime);
   newDay.setUTCHours(0, 0, 0, 0);
@@ -994,7 +964,6 @@ function onSolarWindChange() {
   rebuildFieldLines(1000); // sun/moon position already maintained by animation system
   if (params.showIsosurfaces) rebuildIsosurfaces();
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
-  if (params.showSatellite) updateSatelliteProbe();
   if (params.showMagnetopause) rebuildMagnetopause();
   scheduleUrlWrite(params, camera);
 }
@@ -1005,6 +974,225 @@ let magnetopauseGroup = null;
 // --- Particle system and aurora ---
 let particleSystem = null;
 let auroraRenderer = null;
+
+// --- Satellite swarm ---
+let satelliteData    = null;  // parsed satellites.json catalog
+let satelliteSwarm   = null;  // scene object (THREE.Points + orbit trace)
+let satelliteWorker  = null;  // classic Web Worker with SGP4 WASM
+let swarmPropId      = 0;     // generation counter for stale-response guard
+let lastPropTime     = 0;     // performance.now() of last propagation dispatch
+let selectedSatIdx   = -1;    // global index into satelliteData.satellites, or -1
+let orbitTraceReqId  = 0;     // generation counter for orbit trace requests
+
+// Monthly TLE cache — lazy-loaded as the user navigates through time.
+// "YYYY-MM" → { tles: { "noradId": ["line1","line2"], ... } } | null (not found)
+const tleMonthCache  = new Map();
+const tleInFlight    = new Map();
+let   lastTleMonth   = null;  // most recently applied "YYYY-MM" key
+
+/**
+ * Lazily fetch a monthly TLE snapshot file.
+ * @returns {Promise<object|null>} parsed JSON or null if unavailable
+ */
+function fetchTleMonth(year, month) {
+  const key = `${year}-${String(month).padStart(2, '0')}`;
+  if (tleMonthCache.has(key)) return Promise.resolve(tleMonthCache.get(key));
+  if (tleInFlight.has(key))   return tleInFlight.get(key);
+  const p = fetch(`./data/tles/${key}.json`)
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null)
+    .then(data => { tleMonthCache.set(key, data); tleInFlight.delete(key); return data; });
+  tleInFlight.set(key, p);
+  return p;
+}
+
+/**
+ * Apply a monthly TLE snapshot: update line1/line2 in-place on the catalog,
+ * then re-init the worker so the new TLEs take effect immediately.
+ * Only entries present in tleData.tles are updated; others keep their current TLE.
+ */
+function applyMonthlyTles(tleData) {
+  if (!tleData?.tles || !satelliteData) return;
+  const tles = tleData.tles;
+  for (const sat of satelliteData.satellites) {
+    const entry = tles[String(sat.id)];
+    if (entry) { sat.line1 = entry[0]; sat.line2 = entry[1]; }
+  }
+  if (satelliteWorker) {
+    satelliteWorker.postMessage({ type: 'init', satellites: satelliteData.satellites });
+    lastPropTime = 0;
+  }
+}
+
+/**
+ * Check whether the simulation has crossed into a new month.
+ * If so, load the corresponding TLE snapshot and re-init the worker.
+ * Fire-and-forget — the fetch is async; no-op while in-flight.
+ */
+function maybeUpdateTleMonth(date) {
+  if (!params.satellites.enabled || !satelliteData) return;
+  const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  if (key === lastTleMonth) return;
+  lastTleMonth = key;
+  fetchTleMonth(date.getUTCFullYear(), date.getUTCMonth() + 1).then(data => {
+    // Guard: user may have scrubbed to a different month before this resolves
+    if (data && key === lastTleMonth) applyMonthlyTles(data);
+  });
+}
+
+/** Convert JS Date to Ds50UTC (days since 1950-01-01 00:00:00 UTC). */
+function dateToDs50UTC(date) {
+  return (date.getTime() + 631_152_000_000) / 86_400_000;
+}
+
+/** Propagation interval (real ms) based on timeline playback speed. */
+function getPropIntervalMs(speed) {
+  if (speed >= 86400) return 200;
+  if (speed >= 3600)  return 500;
+  if (speed >= 60)    return 2000;
+  return 10000;
+}
+
+function getOrCreateSatelliteWorker() {
+  if (!satelliteWorker) {
+    satelliteWorker = new Worker('/workers/satelliteWorker.js');
+    satelliteWorker.onmessage = onSatelliteWorkerMessage;
+    satelliteWorker.onerror = (e) => console.error('[SatWorker]', e.message);
+  }
+  return satelliteWorker;
+}
+
+function onSatelliteWorkerMessage(e) {
+  const { type, requestId } = e.data;
+
+  if (type === 'ready') {
+    // Worker initialized — trigger immediate propagation
+    lastPropTime = 0;
+    return;
+  }
+
+  if (type === 'positions') {
+    if (requestId !== swarmPropId) return; // stale
+    if (satelliteSwarm) {
+      satelliteSwarm.updatePositions(e.data.positions, e.data.count);
+      if (selectedSatIdx >= 0 && coeffs) {
+        updateSelectedSatEnvironment(e.data.positions, e.data.count);
+      }
+    }
+    return;
+  }
+
+  if (type === 'orbit') {
+    if (requestId !== orbitTraceReqId) return; // stale
+    if (satelliteSwarm && e.data.points) {
+      const sat = satelliteData?.satellites[selectedSatIdx];
+      satelliteSwarm.setOrbitTrace(e.data.points, sat?.orbitClass ?? 'leo');
+    }
+    return;
+  }
+}
+
+/**
+ * Update environment readout for the currently selected satellite using
+ * the latest propagated position array.
+ */
+function updateSelectedSatEnvironment(positions, count) {
+  if (selectedSatIdx < 0 || selectedSatIdx >= count) return;
+  const x = positions[selectedSatIdx * 3];
+  const y = positions[selectedSatIdx * 3 + 1];
+  const z = positions[selectedSatIdx * 3 + 2];
+  if (y < -1) return; // underground = propagation failed
+  // Convert scene coords back to physics (km)
+  const Re = 6371.2;
+  const xKm = x * Re, yKm = y * Re, zKm = z * Re;
+  const r = Math.sqrt(xKm * xKm + yKm * yKm + zKm * zKm);
+  const theta = Math.acos(Math.max(-1, Math.min(1, yKm / r))); // colatitude (Y-up → theta from +Y)
+  const phi   = Math.atan2(zKm, xKm); // east longitude
+  const swParams = getSolarWindParams();
+  const env = computeMagneticEnvironment(r, theta, phi, coeffs, params.maxDegree, swParams);
+  const kp = computeKp(swParams);
+  const flux = computeBeltFlux(kp, swParams?.dst ?? 0);
+  const sat = satelliteData.satellites[selectedSatIdx];
+  const altKm = r - Re;
+  const latDeg = 90 - theta * (180 / Math.PI);
+  const lonDeg = phi * (180 / Math.PI);
+  updateEnvironmentReadout({
+    latDeg, lonDeg, altitudeKm: altKm,
+    bMagnitude: env.bMagnitude, lShell: env.lShell, region: env.region,
+    saaProximity: env.saaProximity, kp,
+    swEnabled: swParams?.enabled ?? false,
+    innerFlux: flux.innerFlux, outerFlux: flux.outerFlux, slotFlux: flux.slotFlux,
+  }, sat.name);
+}
+
+function triggerSwarmPropagation() {
+  if (!satelliteData || !satelliteSwarm) return;
+  const reqId = ++swarmPropId;
+  const simDate = timeline ? new Date(timeline.getSimTimeAt(0)) : new Date(params.datetimeString);
+  getOrCreateSatelliteWorker().postMessage({
+    type: 'propagate',
+    requestId: reqId,
+    ds50utc: dateToDs50UTC(simDate),
+  });
+}
+
+function onSatelliteSelected(globalIndex) {
+  selectedSatIdx = globalIndex;
+  if (satelliteSwarm) satelliteSwarm.setSelected(globalIndex);
+
+  if (globalIndex < 0) {
+    delete params._satSelected;
+    if (satelliteSwarm) satelliteSwarm.clearOrbitTrace();
+    hideEnvironmentReadout();
+    scheduleUrlWrite(params, camera);
+    return;
+  }
+
+  params._satSelected = satelliteData.satellites[globalIndex].id;
+
+  // Request orbit trace
+  const sat = satelliteData.satellites[globalIndex];
+  const periodMin = periodFromLine2(sat.line2);
+  if (periodMin > 0) {
+    const reqId = ++orbitTraceReqId;
+    const simDate = timeline ? new Date(timeline.getSimTimeAt(0)) : new Date(params.datetimeString);
+    getOrCreateSatelliteWorker().postMessage({
+      type: 'traceOrbit',
+      requestId: reqId,
+      satIndex: globalIndex,
+      ds50utc: dateToDs50UTC(simDate),
+      periodMin,
+    });
+  }
+  scheduleUrlWrite(params, camera);
+}
+
+function onSatelliteSwarmChange() {
+  if (!satelliteData) return;
+  if (params.satellites.enabled) {
+    if (!satelliteSwarm) {
+      satelliteSwarm = createSatelliteSwarm(scene, satelliteData.satellites);
+      const enabledClasses = ['leo','meo','geo','heo','other'].filter(c => params.satellites[`show${c.charAt(0).toUpperCase()+c.slice(1)}`]);
+      getOrCreateSatelliteWorker().postMessage({
+        type: 'init',
+        satellites: satelliteData.satellites,
+      });
+    }
+    if (satelliteSwarm) satelliteSwarm.applyVisibility(params.satellites);
+    lastPropTime = 0; // force re-prop
+  } else {
+    if (satelliteSwarm) {
+      satelliteSwarm.dispose();
+      satelliteSwarm = null;
+    }
+    hideEnvironmentReadout();
+  }
+  // Update search panel filters
+  const enabledClasses = ['leo','meo','geo','heo','other']
+    .filter(c => params.satellites[`show${c.charAt(0).toUpperCase()+c.slice(1)}`]);
+  updateSatelliteFilter(enabledClasses, params.satellites.notableOnly);
+  scheduleUrlWrite(params, camera);
+}
 
 function rebuildMagnetopause() {
   if (magnetopauseGroup) {
@@ -1041,7 +1229,8 @@ const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onClipChange: applyClipChanges,
   onBeltRebuild: () => rebuildRadiationBelts(),
   onBeltVisualChange: applyBeltVisualChanges,
-  onSatelliteChange: updateSatelliteProbe,
+  onSatelliteSwarmChange,
+  onSatelliteSearchOpen: () => toggleSatellitePanel(),
   onSolarWindChange,
   onMagnetopauseChange,
   // Particle / aurora changes are handled by the per-frame update() calls;
@@ -1096,6 +1285,17 @@ function animate(now = performance.now()) {
   if (particleSystem) particleSystem.update(dt, getSolarWindParams(), params.particles, timeline?.getSpeed() ?? 1);
   if (auroraRenderer) auroraRenderer.update(now / 1000, params.dst, params.aurora);
 
+  // Satellite swarm: throttled SGP4 propagation + orbit trace animation
+  if (params.satellites.enabled && satelliteSwarm) {
+    const interval = getPropIntervalMs(timeline?.getSpeed() ?? 1);
+    if (now - lastPropTime > interval) {
+      lastPropTime = now;
+      triggerSwarmPropagation();
+    }
+    satelliteSwarm.lerpPositions(now);
+    satelliteSwarm.tickOrbitTrace(now);
+  }
+
   // Belt flux encoding: smoothly modulate isosurface brightness/color by Kp/Dst.
   // Runs every frame (cheap pure math + a few material writes) when belts are visible.
   if (radiationBeltGroup && (params.showInnerBelt || params.showOuterBelt)) {
@@ -1122,6 +1322,30 @@ async function init() {
     loadCoefficients(),
     loadMonth(2025, 11),
   ]);
+
+  // Load satellite catalog (non-blocking — swarm only shown when user enables it)
+  fetch('./data/satellites.json')
+    .then(r => r.json())
+    .then(data => {
+      satelliteData = data;
+      // Init the search panel (always — so user can open it even before enabling swarm)
+      initSatellitePanel(data.satellites, { onSelect: onSatelliteSelected });
+      // If satellites were enabled via URL, create swarm and init worker now
+      if (params.satellites.enabled) {
+        satelliteSwarm = createSatelliteSwarm(scene, data.satellites);
+        satelliteSwarm.applyVisibility(params.satellites);
+        getOrCreateSatelliteWorker().postMessage({ type: 'init', satellites: data.satellites });
+      }
+      // Restore selected satellite from URL
+      if (_urlOverrides._satSelected !== undefined) {
+        const idx = findSatelliteIndex(data.satellites, _urlOverrides._satSelected);
+        if (idx >= 0) {
+          setSatellitePanelSelection(idx);
+          if (params.satellites.enabled) onSatelliteSelected(idx);
+        }
+      }
+    })
+    .catch(err => console.warn('[Satellites] Failed to load catalog:', err));
 
   // Create particle system and aurora (after scene is ready)
   particleSystem = createParticleSystem(scene);
