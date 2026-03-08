@@ -1019,7 +1019,10 @@ function applyMonthlyTles(tleData) {
     if (entry) { sat.line1 = entry[0]; sat.line2 = entry[1]; }
   }
   if (satelliteWorker) {
-    satelliteWorker.postMessage({ type: 'init', satellites: satelliteData.satellites });
+    // Terminate and recreate to get a fresh WASM context — safer than re-init.
+    satelliteWorker.terminate();
+    satelliteWorker = null;
+    getOrCreateSatelliteWorker().postMessage({ type: 'init', satellites: satelliteData.satellites });
     lastPropTime = 0;
   }
 }
@@ -1184,6 +1187,13 @@ function onSatelliteSwarmChange() {
     if (satelliteSwarm) {
       satelliteSwarm.dispose();
       satelliteSwarm = null;
+    }
+    // Terminate the worker so re-enable gets a fresh WASM context.
+    // In-place WASM re-init (freeing then re-allocating satKeys) causes
+    // out-of-bounds memory access in the SGP4 C library.
+    if (satelliteWorker) {
+      satelliteWorker.terminate();
+      satelliteWorker = null;
     }
     hideEnvironmentReadout();
   }

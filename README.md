@@ -2,7 +2,7 @@
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightblue.svg)](https://creativecommons.org/licenses/by/4.0/)
 
-Interactive 3D visualization of Earth's magnetosphere: field lines, radiation belt isosurfaces, Van Allen belt particles, aurora, and historical solar wind playback. All physics runs client-side in the browser.
+Interactive 3D visualization of Earth's magnetosphere: field lines, radiation belt isosurfaces, Van Allen belt particles, aurora, historical solar wind playback, and real SGP4-propagated satellite orbits. All physics runs client-side in the browser.
 
 For physics background, model descriptions, and citations see **[public/about.html](public/about.html)**.
 
@@ -14,8 +14,10 @@ For physics background, model descriptions, and citations see **[public/about.ht
 npm install
 node scripts/convert-igrf.js          # generate public/data/igrf/igrf14-all.json (all epochs)
 node scripts/convert-solarwind.js 2025 # generate public/data/solarwind/2025-MM.json
+node scripts/convert-satellites.js    # generate public/data/satellites.json (~1,500 curated sats)
+node scripts/convert-tles.js 2025     # generate public/data/tles/2025-MM.json (monthly TLEs)
 npm run dev                            # http://localhost:5173
-npm test             # run all 197 tests (vitest)
+npm test             # run all 220 tests (vitest)
 npm run test:watch   # watch mode
 npm run build        # production build → dist/
 ```
@@ -29,6 +31,7 @@ Built using [Claude Code](https://claude.ai/code/family)
 | Layer | Library |
 |---|---|
 | 3D rendering | [Three.js](https://threejs.org/) — TubeGeometry, MeshPhysicalMaterial, ShaderMaterial |
+| SGP4 propagator | [US Space Force SGP4 WASM v9.1.1.0](https://www.space-track.org/documentation#sgp4) — official C propagator compiled to WebAssembly |
 | Build / dev | [Vite](https://vitejs.dev/) |
 | Control panel | [lil-gui](https://lil-gui.georgealways.com/) |
 | Tests | [Vitest](https://vitest.dev/) |
@@ -61,33 +64,48 @@ src/
     magnetopauseMesh.js    # Shue magnetopause parametric surface (lazy-imported)
     particleSystem.js      # Van Allen belt particles — THREE.Points, drift animation, storm injection
     auroraRenderer.js      # Aurora oval — torus at 67° lat, curtain ShaderMaterial, Dst-driven opacity
-    satelliteMarker.js     # Satellite probe sphere
+    satelliteSwarm.js      # ~1,500 SGP4-propagated satellites — THREE.Points per orbit class,
+                           #   smooth lerp between propagation ticks, animated orbit trace
+    satelliteMarker.js     # Satellite probe sphere (static environment probe)
     controls.js            # OrbitControls setup
     clippingPlanes.js      # Equatorial / meridional clip planes
   ui/
     controlPanel.js        # lil-gui panel, all parameter callbacks
+    satellitePanel.js      # HTML search/select overlay for satellite catalog
     timeline.js            # Scrub bar: play/pause, 1×/60×/3600×/86400×, 8 s rebuild throttle
     infoOverlay.js         # Top-left info overlay
     environmentReadout.js  # Satellite environment readout (|B|, L-shell, region)
+    urlParams.js           # Bidirectional URL hash ↔ params sync
   utils/
     constants.js           # KM_TO_SCENE, EARTH_RADIUS_KM, LATITUDE_SETS, etc.
     colors.js              # latitudeToColor() — field line hue by latitude
   main.js                  # Entry point: init, render loop, rebuild orchestration
 
 scripts/
-  convert-igrf.js          # NOAA igrf14coeffs.txt → public/data/igrf14coeffs.json
-  convert-solarwind.js     # WGhour.d / OMNI2 → public/data/solarwind-YYYY.json
+  convert-igrf.js          # NOAA igrf14coeffs.txt → public/data/igrf/igrf14-all.json
+  convert-solarwind.js     # WGhour.d / OMNI2 → public/data/solarwind/YYYY-MM.json
+  convert-satellites.js    # Space-Track 3LE snapshot → public/data/satellites.json
+  convert-tles.js          # Space-Track bulk 2LE archive → public/data/tles/YYYY-MM.json
 
-tests/                     # Vitest unit tests (197 tests, 13 files)
+tests/                     # Vitest unit tests (220 tests, 14 files)
 
 public/
   about.html               # User-facing physics reference (models, citations, how-to)
+  lib/
+    sgp4/
+      Sgp4Prop.js          # Emscripten WASM wrapper (US Space Force SGP4 v9.1.1.0)
+      Sgp4Prop.wasm        # WASM binary (120 KB)
+  workers/
+    satelliteWorker.js     # Classic Web Worker — loads WASM, handles propagate/traceOrbit messages
   data/
     igrf/
       igrf14-all.json      # Generated — IGRF-14 Gauss coefficients, all epochs 1900–2025
     WGhour.d               # Source solar wind data (Qin-Denton, not committed — large)
     solarwind/
       YYYY-MM.json         # Generated — monthly solar wind per year
+    satellites.json        # Generated — curated ~1,500-satellite catalog with TLEs
+    tles/
+      YYYY-MM.json         # Generated — monthly TLE snapshots for timeline-accurate propagation
   textures/                # Earth day map (NASA Blue Marble)
 ```
 
@@ -145,6 +163,38 @@ solarwind/YYYY-MM.json   (columnar, version 2.0)
     ▼
 getSolarWindParams()   →  T01 parmod + Shue magnetopause
 ```
+
+### Satellite propagation pipeline
+
+```
+Space-Track.all.3le.txt  (curated 3-line snapshot, ~1,500 sats)
+    │
+    ▼  scripts/convert-satellites.js
+    │
+    ▼
+satellites.json          (catalog: id, name, orbitClass, line1, line2, notable)
+    │
+    ├─▶  on enable: satelliteWorker ← TleAddSatFrLines_wasm → Sgp4InitSats_wasm
+    │                   (one Web Worker per session; terminate+recreate on month change)
+    │
+    └─▶  propagate tick: Sgp4PropDs50UtcPosVel_wasm → ECI → ECEF (GMST) → scene coords
+                │  throttled: 10 s at 1×, 200 ms at 86400×
+                │
+                ▼  lerpPositions() every frame (smooth between ticks)
+                │
+                └─▶  THREE.Points per orbit class (LEO/MEO/GEO/HEO/OTHER)
+
+Space-Track bulk 2LE archive  (tle2025.txt, ~3 GB for a full year)
+    │
+    ▼  scripts/convert-tles.js 2025  (streaming readline, no full load)
+    │  picks TLE closest to day 15 of each month per satellite
+    │
+    ▼
+tles/YYYY-MM.json        (lazy-loaded; worker reinitialised on month boundary)
+```
+
+Orbit classes use official Space Track definitions applied from TLE line 2:
+`HEO (e > 0.25)` → `LEO (n > 11.25 rev/d)` → `GEO (n ≈ 1 rev/d, e < 0.01)` → `MEO (600–800 min period)` → `OTHER`.
 
 ### Rebuild triggers
 
@@ -236,6 +286,22 @@ node scripts/convert-solarwind.js 2025 /path/to/omni2.dat  # OMNI2 fallback (no 
 
 Output: `public/data/solarwind/YYYY-MM.json`. The app lazy-loads per month at runtime.
 
+### Satellite catalog & TLEs
+
+```bash
+# One-time: generate the curated satellite catalog from a Space-Track 3LE snapshot
+node scripts/convert-satellites.js
+# Input:  public/data/Space-Track.all.3le.txt  (3-line element file)
+# Output: public/data/satellites.json  (~1,500 satellites, ~240 KB)
+
+# Per year: generate monthly TLE snapshots for timeline-accurate propagation
+node scripts/convert-tles.js 2025
+# Input:  public/data/tle2025.txt  (Space Track bulk 2-line archive, ~3 GB)
+# Output: public/data/tles/2025-MM.json  (one file per month, ~200 KB each)
+```
+
+Monthly TLE files are lazy-loaded at runtime when the timeline crosses a month boundary, keeping the SGP4 propagation error small over long playback spans.
+
 ---
 
 ## Data Sources & References
@@ -246,4 +312,5 @@ Full citations for physics models, data sources, and software are in **[public/a
 
 ## TODOs
 
-- [ ] Satellite orbit display (SGP4/TLE) — source data in `public/data/Space-Track.all.3le.txt`
+- [ ] Show satellite CAD model on satellite selection (example model in `public/models/`; detail-inset panel)
+- [ ] Per-population particle count allocation using Little's Law ratio to keep proton/electron balance accurate across solar wind conditions

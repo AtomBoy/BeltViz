@@ -156,10 +156,36 @@ Budgets use **Little's Law** (N_steady = rate × τ) to split the `maxCount` poo
 ### Satellite environment probe
 
 - `src/physics/magneticEnvironment.js` — Computes L-shell (dipole approximation: `tan(λ_m) = |Br|/(2*Bperp)`, `L = r/(Re*cos²λ_m)`), radiation belt region classification, SAA proximity at any point. Reuses `computeB`.
-- `src/physics/satellitePosition.js` — Geographic lat/lon/alt to physics coordinates (Y-up Cartesian + spherical). Ready for future satellite.js (SGP4/TLE) integration.
-- `src/scene/satelliteMarker.js` — Small emissive sphere at configured position.
+- `src/physics/satellitePosition.js` — Geographic lat/lon/alt to physics coordinates (Y-up Cartesian + spherical).
+- `src/scene/satelliteMarker.js` — Small emissive sphere at configured position (static probe).
 - `src/ui/environmentReadout.js` — Fixed-position HTML overlay (top-left, below info overlay) showing |B|, L-shell, region, SAA status. Styled to match infoOverlay.
 - `src/ui/timeline.js` — Bottom-of-screen timeline bar. Play/pause, speed (1×/60×/3600×/86400×), day ◄/► navigation, draggable playhead. Calls `lightUpdateDatetime` each rAF frame (seeks Three.js keyframes), `updateDatetime` on pause/drag-end/every 2s throttle (full field-line rebuild). See `ANIMATION.md` for the full sun/moon animation architecture.
+
+### Satellite swarm (SGP4/TLE)
+
+**Catalog generation** (`scripts/convert-satellites.js`): reads `public/data/Space-Track.all.3le.txt` (3-line elements), filters debris/rocket-bodies by name, classifies by orbit (HEO→LEO→GEO→MEO→OTHER priority order using mean motion + eccentricity from TLE line 2), selects ~1,500 notable satellites, outputs `public/data/satellites.json`.
+
+**Monthly TLE snapshots** (`scripts/convert-tles.js`): streams Space Track bulk 2-line archive (e.g. `public/data/tle2025.txt`, ~3 GB). For each satellite × month, picks the TLE whose epoch is closest to day 15 (minimises propagation error). Outputs `public/data/tles/YYYY-MM.json`. Usage: `node scripts/convert-tles.js 2025`.
+
+**Worker** (`public/workers/satelliteWorker.js`): classic Web Worker (not ES module, so `importScripts()` is available). Loads `public/lib/sgp4/Sgp4Prop.js` + `.wasm` (US Space Force v9.1.1.0). Message protocol:
+- `init` → parses TLEs via `TleAddSatFrLines_wasm`, initialises SGP4 state via `Sgp4InitSats_wasm`
+- `propagate` → `Sgp4PropDs50UtcPosVel_wasm` batch call → ECI (TEME, km, z-up) → ECEF (GMST rotation, Vallado Eq. 3-47) → BeltViz scene coords (Y-up, Earth radius = 1)
+- `traceOrbit` → 181-point single-satellite propagation for one full period
+
+**WASM re-init pattern**: do NOT call `freeSatellites()` then re-init in the same worker — `TleRemoveSats_wasm` reads freed SGP4 key handles and causes `RuntimeError: Out of bounds memory access`. Instead: **terminate the worker and create a new one** (fresh WASM context). This is done in `onSatelliteSwarmChange` (disable path) and `applyMonthlyTles` in `main.js`.
+
+**Rendering** (`src/scene/satelliteSwarm.js`): four `THREE.Points` objects (one per orbit class) with custom `ShaderMaterial`. Crisp disc fragment shader (`smoothstep(1.0, 0.6, d)`, no glow). Size attenuation: `clamp(satSize / (dist * 0.18 + 0.05), 3.0, 20.0) * uDPR`.
+
+**Smooth interpolation**: `updatePositions()` double-buffers `_prevPos`/`_nextPos`. On each propagation result, swaps buffers and sets `_lerpT = 0`. `lerpPositions(now)` runs every frame: `t = (now - _propArrivedAt) / _propIntervalMs`, writes linearly interpolated positions to `posAttr`. Interval estimated from time between arrivals. No-op when `_lerpT >= 1.0`.
+
+**Monthly TLE runtime** (`main.js`): `maybeUpdateTleMonth(date)` called from `lightUpdateDatetime()` on month boundary. `fetchTleMonth(year, month)` lazy-fetches from `public/data/tles/YYYY-MM.json` with in-flight dedup. `applyMonthlyTles(data)` updates `line1`/`line2` in `satelliteData.satellites[]` in-place, terminates+recreates worker, resets `lastPropTime = 0`.
+
+**Propagation cadence** (real-time ms between ticks, from `getPropagationIntervalMs`):
+- 1× → 10,000 ms · 60× → 2,000 ms · 3,600× → 500 ms · 86,400× → 200 ms
+
+**Time format**: Ds50UTC = days since 1950-01-01 00:00:00 UTC. Conversion: `(date.getTime() + 631_152_000_000) / 86_400_000`.
+
+**Orbit colors**: LEO `#c8d8f0` (pale blue), MEO `#44eebb` (cyan), GEO `#ffdd44` (gold), HEO `#ee66ff` (magenta), OTHER `#888888` (grey).
 
 ## Testing
 
@@ -184,11 +210,10 @@ When adding a new physics model, algorithm, or data source:
 
 ## TODOs based on user feedback
 
-### Imediate issues
+### Immediate issues
 
-- [ ] For the particle simulation- having electrons and protons share the same 'Max Particles' count leads to the protons dominating the particles because they last longer. Come up with a way to allocate (split) the max particle count to each type such that their ratio stays accurate to the physics. Perhaps a ratio 'average age' of each type could be used to set a per-type max particle count. This will probably vary with solar wind conditions. The goal is to have a realistic ratio of protons to electrons while keeping close to the 'Max Particles' limit.
+- [ ] For the particle simulation, electrons and protons share the same 'Max Particles' count, causing protons to dominate because they have longer lifetimes. Allocate (split) the max particle count per type using their steady-state ratio (Little's Law: N = rate × τ). The goal is a realistic proton/electron ratio that stays near the 'Max Particles' limit across varying solar wind conditions.
 
-### Longer term - Phase 4, 5, 6 - we're not implementing these yet but keeping them in mind
+### Longer term
 
-- [ ] We want to show satellites moving in orbit based on a tle file (also called a 3le file). We've used satellite-js for this before [https://www.npmjs.com/package/satellite.js/v/1.3.0]. (This is the same TODO item as the 'Satellite orbit display (SGP4/TLE)' in the README.md roadmap section.) There is a file of recent tle data in `public/data/Space-Track.all.3le.txt`. We won't want to use every record. Lets filter out the 'junk' such as debris, rocket bodies, and other less interesting bodies.
-- [ ] Show satellite CAD model on satellite selection. There is an example CAD file in @public/models . When a satellite is selected, show the model in the upper left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.
+- [ ] Show satellite CAD model on satellite selection. There is an example CAD file in `public/models/`. When a satellite is selected, show the model in the upper-left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.
