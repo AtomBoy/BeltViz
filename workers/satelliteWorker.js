@@ -123,7 +123,6 @@ function freeSatellites() {
 // ─── Init satellites ──────────────────────────────────────────────────────────
 
 function initSatellites(satellites) {
-  freeSatellites(); // no-op on first call; frees old data on re-init
   // Add all TLEs sequentially and collect satKeys
   const ids = [];
   for (const sat of satellites) {
