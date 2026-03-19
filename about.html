@@ -101,6 +101,12 @@
                border-radius: 6px; padding: 14px 18px; font-size: 14px;
                margin: 16px 0; }
     .callout strong { color: var(--accent); }
+    .callout--physics { border-color: rgba(200,168,74,0.35); background: rgba(200,168,74,0.04); }
+    .callout--physics strong { color: var(--gold); }
+    .callout--physics .phys-q { color: var(--gold); font-weight: 600; margin: 14px 0 4px; font-size: 13.5px;
+                                 letter-spacing: .03em; }
+    .callout--physics p { margin-bottom: 10px; }
+    .callout--physics p:last-child { margin-bottom: 0; }
   </style>
 </head>
 <body>
@@ -506,6 +512,71 @@
     determines the large-scale structure of the radiation belts.
   </div>
 
+  <div class="callout callout--physics">
+    <strong>Physics note — What are field lines, really?</strong>
+
+    <div class="phys-q">Are magnetic field lines physical objects, or a visualization device?</div>
+    <p>
+      Field lines are <em>mathematical</em> objects — specifically, the integral curves of the vector
+      field <strong>B</strong>: the family of curves whose tangent at every point equals the local
+      field direction. Formally each line satisfies d<strong>r</strong>/d<em>s</em> = <strong>B̂</strong>(<strong>r</strong>).
+      The field <strong>B</strong> is physical — it carries energy, exerts forces, and obeys Maxwell's
+      equations. The lines are one way to represent that continuous field visually.
+      Maxwell's law ∇·<strong>B</strong> = 0 (no magnetic monopoles) does constrain field-line
+      topology: because <strong>B</strong> has zero divergence, lines must form closed loops or extend
+      to infinity and cannot terminate at point sources. This is genuine physics. But the lines
+      themselves are not discrete physical objects — they are a graphical choice. Michael Faraday,
+      who introduced "lines of force," understood them as indicating "the direction and amount of
+      force at any given point," not as physical fibers.
+      In MHD plasmas, Alfvén's frozen-in theorem lends field lines a quasi-material identity —
+      plasma in a highly conducting fluid cannot cross them — but even Alfvén warned that the
+      language breaks down wherever magnetic reconnection occurs.
+    </p>
+
+    <div class="phys-q">When iron filings align in a magnetic field, do they reveal pre-existing lines?</div>
+    <p>
+      No — each filing independently samples the continuous field, and the visible chains are an
+      emergent collective phenomenon. The mechanism has two stages. First, ferromagnetic induction:
+      each rod-shaped filing acquires an induced dipole moment aligned with the local <strong>B</strong>
+      at its position, then rotates until its long axis lies along the field. This is an independent
+      local measurement of a continuous field, not a snapping-to of a pre-existing groove in space.
+      Second, chain formation: adjacent aligned filings attract each other end-to-end via dipole–dipole
+      coupling and link up. The "lines" you see are those chains — their number and spacing are
+      determined by filing density and initial placement, not by any intrinsic discreteness of
+      the field. A denser sprinkling produces more, closer chains; in the continuum limit the
+      pattern would become a smooth surface.
+    </p>
+
+    <div class="phys-q">Particles gyrate "around a field line" — but if magnetism is a continuous force, what are they orbiting?</div>
+    <p>
+      There is no wire. The gyration geometry arises entirely from the Lorentz force
+      <strong>F</strong> = <em>q</em>(<strong>v</strong> × <strong>B</strong>), which acts
+      perpendicular to both the particle velocity and the local field direction. For a particle
+      moving in a uniform field, the perpendicular velocity component traces a circle with
+      Larmor (cyclotron) radius r<sub>L</sub> = mv<sub>⊥</sub> / (|q|B) and angular frequency
+      ω<sub>c</sub> = |q|B / m — derived purely from the vector cross product, with no
+      physical structure to orbit.
+    </p>
+    <p>
+      In a slowly varying field (one that changes little over one Larmor radius — the adiabatic
+      condition), the particle trajectory can be decomposed into fast gyration plus the slow drift
+      of the gyration centre, called the <em>guiding center</em>. The guiding center tracks along
+      the mathematical field line — the integral curve of <strong>B</strong> — to lowest order.
+      This is the <strong>guiding-center approximation</strong>, developed by Hannes Alfvén and
+      formalized by Northrop (1963). A particle "orbiting a field line" is shorthand for: the
+      guiding center advances along the integral curve of <strong>B</strong> while the particle
+      executes rapid circles around it — the curve provides no physical support, only geometric
+      definition.
+    </p>
+    <p>
+      The three adiabatic invariants (magnetic moment μ, longitudinal invariant <em>J</em>, and
+      drift-shell flux Φ) that underpin the structure of the Van Allen belts all arise from
+      this guiding-center picture. They are conserved quantities of the Lorentz-force motion
+      averaged over successively longer timescales — not properties of physical "lines."
+      See Northrop (1963) and Roederer (1970) for the complete derivation.
+    </p>
+  </div>
+
   <h3>Three nested periodic motions</h3>
   <p>Every trapped particle executes three independent periodic motions, each faster than the next:</p>
 
@@ -850,6 +921,64 @@
         Original proposal of the CRAND mechanism: galactic cosmic rays produce secondary neutrons in
         the atmosphere, which then decay into protons that become trapped in the inner belt.
         Confirmed observationally by Van Allen et al. and subsequent instruments.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">The Adiabatic Motion of Charged Particles</div>
+      <div class="cite-authors">
+        Northrop, T.G. (1963). Interscience / Wiley, New York.
+      </div>
+      <div class="cite-note">
+        The definitive monograph on guiding-center theory. Establishes the decomposition of
+        charged-particle motion into fast gyration, bounce, and slow drift; derives the three
+        adiabatic invariants (μ, J, Φ) from first principles. The formal basis for the claim that
+        a trapped particle "follows a field line" — the guiding center tracks the integral curve
+        of <strong>B</strong> in the adiabatic limit. See also the companion paper:
+        Northrop, T.G. &amp; Teller, E. (1960), <em>Physical Review</em>, 117, 215.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        The Guiding Center Approximation to Charged Particle Motion
+      </div>
+      <div class="cite-authors">
+        Northrop, T.G. (1961). <em>Annals of Physics</em>, 15, 79–101.
+        <a href="https://www.classe.cornell.edu/~ib38/reu/09/Henderson/Papers/Northrop%20Guiding%20Center.pdf"
+           target="_blank">PDF (Cornell CLASSE)</a>
+      </div>
+      <div class="cite-note">
+        Journal-form presentation of the guiding-center formalism. Derives the drift equations
+        and explains why a particle in a slowly varying field follows the mathematical field line
+        (integral curve of <strong>B</strong>) rather than any physical structure.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Introduction to Plasma Physics and Controlled Fusion, Vol. 1</div>
+      <div class="cite-authors">
+        Chen, F.F. (2016). 3rd ed. Springer.
+        ISBN 978-3-319-22308-7.
+      </div>
+      <div class="cite-note">
+        Standard graduate plasma physics text. Chapter 2 derives the Larmor radius, gyrofrequency,
+        and drift velocities from the Lorentz force; accessible treatment of why gyration geometry
+        follows from the vector cross product with no physical "wire" required.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">Introduction to Electrodynamics, 4th ed.</div>
+      <div class="cite-authors">
+        Griffiths, D.J. (2013). Cambridge University Press.
+        ISBN 978-1-108-42041-9.
+      </div>
+      <div class="cite-note">
+        §5.3 defines field lines as graphical tools for representing the continuous vector field
+        <strong>B</strong>. §5.3.2 explains ∇·<strong>B</strong> = 0 and its consequence for
+        field-line topology (closed loops, no termination at points). Standard undergraduate
+        reference for the ontological status of field lines.
       </div>
     </div>
 
