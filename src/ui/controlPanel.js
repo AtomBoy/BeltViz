@@ -55,6 +55,8 @@ export function createControlPanel(params, callbacks) {
     onSatelliteSearchOpen  = () => {},
     onSolarWindChange,
     onMagnetopauseChange,
+    onBowShockChange   = () => {},
+    onColorByBChange   = () => {},
     // Particle and aurora changes are handled by per-frame update() calls in main.js.
     // These callbacks are accepted but currently unused (no-ops).
     // eslint-disable-next-line no-unused-vars
@@ -81,6 +83,7 @@ export function createControlPanel(params, callbacks) {
   fieldFolder.add(params, 'numLongitudes', 4, 36, 2).name('Longitudes').onChange(onRebuild);
   fieldFolder.add(params, 'tubeRadius', 0.003, 0.04, 0.001).name('Line Thickness').onChange(onRebuild);
   fieldFolder.add(params, 'showFieldLines').name('Show Field Lines').onChange(onVisualChange);
+  fieldFolder.add(params, 'colorByB').name('Color by Solar Wind Influence').onChange(onColorByBChange);
   fieldFolder.add(params, 'autoRotate').name('Auto Rotate').onChange(onVisualChange);
 
   // Isosurfaces subfolder (closed)
@@ -167,6 +170,7 @@ export function createControlPanel(params, callbacks) {
     if (params.solarWindEnabled) onSolarWindChange();
   });
   fSW.add(params, 'showMagnetopause').name('Show Magnetopause').onChange(onMagnetopauseChange);
+  fSW.add(params, 'showBowShock').name('Show Bow Shock').onChange(onBowShockChange);
   fSW.close();
 
   // ── RADIATION & AURORA ───────────────────────────────────────────────────────
@@ -175,15 +179,15 @@ export function createControlPanel(params, callbacks) {
 
   // Radiation Belts subfolder
   const beltFolder = fRad.addFolder('Radiation Belts');
-  beltFolder.add(params, 'showInnerBelt').name('Inner Belt (L=1.2-2)').onChange((v) => {
+  beltFolder.add(params, 'showInnerBelt').name('Inner Belt (L=1.3-1.9)').onChange((v) => {
     if (v) onBeltRebuild();
     else onBeltVisualChange();
   });
-  beltFolder.add(params, 'showOuterBelt').name('Outer Belt (L=3-6)').onChange((v) => {
+  beltFolder.add(params, 'showOuterBelt').name('Outer Belt (L=3-4.8)').onChange((v) => {
     if (v) onBeltRebuild();
     else onBeltVisualChange();
   });
-  beltFolder.add(params, 'beltOpacity', 0.05, 0.8, 0.01)
+  beltFolder.add(params, 'beltOpacity', 0.05, 1.0, 0.01)
     .name('Opacity')
     .onChange(onBeltVisualChange);
   beltFolder.close();

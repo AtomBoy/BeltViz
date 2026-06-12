@@ -30,6 +30,43 @@ function fieldDirection(x, y, z, coeffs, maxDegree, solarWindParams) {
 }
 
 /**
+ * Compute the colour metric for a field line point.
+ *
+ * When solar wind is active: returns the solar wind influence ratio
+ *   |B_external| / (|B_external| + |B_internal|)  ∈ [0, 1]
+ * Near Earth the IGRF dominates → ratio ≈ 0 (blue).
+ * Near the magnetopause / in the tail the T01 field becomes comparable
+ * to IGRF → ratio → 1 (red), revealing dayside compression and nightside
+ * stretching as a visible colour asymmetry.
+ *
+ * When solar wind is disabled: returns |B_total| (pure IGRF) in nT, which
+ * spans 10–60 000 nT and colour-maps to a classic dipole strength gradient.
+ * The auto-scale in fieldLines.js distinguishes the two modes by value range.
+ */
+function computeColorMetric(x, y, z, coeffs, maxDegree, solarWindParams) {
+  const [r, theta, phi] = cartesianToSpherical(x, y, z);
+  if (solarWindParams?.enabled) {
+    const [Brt, Btt, Bpt] = computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams);
+    const [Bri, Bti, Bpi] = computeB(r, theta, phi, coeffs, maxDegree);
+    const [Bxi, Byi, Bzi] = bFieldToCartesian(Bri, Bti, Bpi, theta, phi);
+    const [Bxt, Byt, Bzt] = bFieldToCartesian(Brt, Btt, Bpt, theta, phi);
+    const magInt = Math.sqrt(Bxi * Bxi + Byi * Byi + Bzi * Bzi);
+    const magExt = Math.sqrt(
+      (Bxt - Bxi) * (Bxt - Bxi) +
+      (Byt - Byi) * (Byt - Byi) +
+      (Bzt - Bzi) * (Bzt - Bzi),
+    );
+    // Ratio in [0, 1]: 0 = purely IGRF, 1 = purely external.
+    // Values are always in [0, 1] so the auto-scale threshold (2000 nT) in
+    // fieldLines.js will correctly identify this as "solar wind influence" mode.
+    return magInt > 0 ? magExt / (magExt + magInt) : 0;
+  }
+  const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, maxDegree);
+  const [Bx, By, Bz] = bFieldToCartesian(Br, Bt, Bp, theta, phi);
+  return Math.sqrt(Bx * Bx + By * By + Bz * Bz);
+}
+
+/**
  * Single RK4 step for field line tracing.
  * Returns the new position [x, y, z] after stepping ds along B.
  */
@@ -109,7 +146,8 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   const maxDegree = options.maxDegree;
   const solarWindParams = options.solarWindParams;
 
-  const points = [[startX, startY, startZ]];
+  const seedBMag = computeColorMetric(startX, startY, startZ, coeffs, maxDegree, solarWindParams);
+  const points = [[startX, startY, startZ, seedBMag]];
   let x = startX;
   let y = startY;
   let z = startZ;
@@ -123,7 +161,7 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
     [x, y, z] = next;
     const rNext = Math.sqrt(x * x + y * y + z * z);
 
-    points.push([x, y, z]);
+    points.push([x, y, z, computeColorMetric(x, y, z, coeffs, maxDegree, solarWindParams)]);
 
     if (rNext < rMin) break; // Hit Earth's surface
     if (rNext > rMax) break; // Escaped to space (open field line)

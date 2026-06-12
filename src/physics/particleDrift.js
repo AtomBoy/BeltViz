@@ -88,6 +88,35 @@ export function lossConeAngle(L) {
 }
 
 /**
+ * Maximum magnetic latitude (radians) at which a particle on drift shell L
+ * still lies inside the rendered belt core mesh.
+ *
+ * The belt meshes (radiationBelts.js) have a rounded iso-flux-style
+ * cross-section: an ellipse in (L, λ_m) space,
+ *   ((L − L_mid)/L_half)² + (λ/latLimit)² = 1
+ * with L_mid = (lMin+lMax)/2 and L_half = (lMax−lMin)/2. Solving for λ at a
+ * given L yields the latitude where the contour closes — beyond it the
+ * particle would poke out of the belt:
+ *   λ_max = latLimit · √(1 − ((L − L_mid)/L_half)²)
+ *
+ * Returns 0 for L at or outside [lMin, lMax] (the contour pinches to the
+ * equator at both L extremes). Callers placing particles intentionally outside
+ * the belt (e.g. storm-time slot filling below lMin) should not apply this cap.
+ *
+ * @param {number} L           McIlwain L-shell of the particle
+ * @param {number} lMin        Belt inner L boundary (at the equator)
+ * @param {number} lMax        Belt outer L boundary (at the equator)
+ * @param {number} latLimitRad Belt latitude limit in radians
+ * @returns {number} Maximum |magnetic latitude| in radians, in [0, latLimitRad]
+ */
+export function beltConfinedLambdaMax(L, lMin, lMax, latLimitRad) {
+  if (lMax <= lMin) return 0;
+  const f = (2 * L - (lMin + lMax)) / (lMax - lMin); // (L − L_mid) / L_half
+  if (f <= -1 || f >= 1) return 0;
+  return latLimitRad * Math.sqrt(1 - f * f);
+}
+
+/**
  * Injection rate scale factor driven by Dst index.
  *
  * @param {number} dst Dst index in nT (negative during storms)
@@ -131,13 +160,14 @@ export function innerBeltElectronRate() {
  * L-shell range for inner belt electrons.
  *
  * Electrons diffuse inward from the outer belt and accumulate primarily in the
- * outer portion of the inner belt (L = 1.5–2.0). The deep inner belt (L < 1.5)
+ * outer portion of the inner belt (L = 1.5–1.9). The deep inner belt (L < 1.5)
  * is strongly proton-dominated; electron diffusion barely reaches there.
+ * Upper bound matches the inner belt core mesh (radiationBelts.js BELT_DEFINITIONS).
  *
  * @returns {{ lMin: number, lMax: number }}
  */
 export function innerBeltElectronLRange() {
-  return { lMin: 1.5, lMax: 2.0 };
+  return { lMin: 1.5, lMax: 1.9 };
 }
 
 /**
@@ -174,13 +204,15 @@ export function crandInjectionRate() {
 
 /**
  * L-shell range for inner belt proton injection (CRAND source).
- * Always L = 1.2–2.0 regardless of Dst — inner belt protons do not compress
+ * Always L = 1.3–1.9 regardless of Dst — inner belt protons do not compress
  * significantly during geomagnetic storms on the timescales we simulate.
+ * Matches the inner belt core mesh (radiationBelts.js BELT_DEFINITIONS) so the
+ * particle population sits inside the rendered belt.
  *
  * @returns {{ lMin: number, lMax: number }}
  */
 export function innerBeltLRange() {
-  return { lMin: 1.2, lMax: 2.0 };
+  return { lMin: 1.3, lMax: 1.9 };
 }
 
 /**

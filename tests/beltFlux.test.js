@@ -101,4 +101,56 @@ describe('computeBeltFlux', () => {
     expect(Number.isFinite(outerFlux)).toBe(true);
     expect(Number.isFinite(slotFlux)).toBe(true);
   });
+
+  // ─── storageBeltFlux (third belt) ─────────────────────────────────────────
+  // Baker et al. 2013 (Science 340:186), Shprits et al. 2013 (Nat Phys 9:699)
+  // Threshold: Dst < −50 nT AND Kp ≥ 2.5
+
+  it('storageBeltFlux is 0 at quiet conditions', () => {
+    expect(computeBeltFlux(0, 0).storageBeltFlux).toBe(0);
+    expect(computeBeltFlux(3, 0).storageBeltFlux).toBe(0);
+  });
+
+  it('storageBeltFlux is 0 when only Dst is below threshold (Kp = 0)', () => {
+    // Dst alone is not sufficient — Kp must also be elevated
+    expect(computeBeltFlux(0, -80).storageBeltFlux).toBe(0);
+    expect(computeBeltFlux(0, -150).storageBeltFlux).toBe(0);
+  });
+
+  it('storageBeltFlux is 0 when only Kp is elevated (Dst = 0)', () => {
+    // Kp alone is not sufficient — Dst must also be depressed
+    expect(computeBeltFlux(6, 0).storageBeltFlux).toBe(0);
+  });
+
+  it('storageBeltFlux is positive during a moderate storm (Dst = −80, Kp = 4)', () => {
+    // Both thresholds met: Dst < −50 and Kp > 2.5
+    expect(computeBeltFlux(4, -80).storageBeltFlux).toBeGreaterThan(0);
+  });
+
+  it('storageBeltFlux approaches 1 during a severe storm (Dst = −150, Kp = 7)', () => {
+    const sf = computeBeltFlux(7, -150).storageBeltFlux;
+    expect(sf).toBeGreaterThan(0.8);
+    expect(sf).toBeLessThanOrEqual(1.0);
+  });
+
+  it('storageBeltFlux is in [0, 1] for all conditions', () => {
+    const cases = [
+      [0, 0], [3, -50], [5, -80], [7, -150], [9, -300],
+    ];
+    for (const [kp, dst] of cases) {
+      const sf = computeBeltFlux(kp, dst).storageBeltFlux;
+      expect(sf).toBeGreaterThanOrEqual(0);
+      expect(sf).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('storageBeltFlux increases with storm severity beyond both thresholds', () => {
+    const sfModerate = computeBeltFlux(4, -80).storageBeltFlux;
+    const sfSevere   = computeBeltFlux(7, -150).storageBeltFlux;
+    expect(sfSevere).toBeGreaterThan(sfModerate);
+  });
+
+  it('storageBeltFlux is a finite number', () => {
+    expect(Number.isFinite(computeBeltFlux(5, -100).storageBeltFlux)).toBe(true);
+  });
 });

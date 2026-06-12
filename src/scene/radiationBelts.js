@@ -1,83 +1,97 @@
 import * as THREE from 'three';
 
-// Loss-cone latitude limits for trapped particle populations.
-// Particles with mirror points inside the atmosphere are lost; the surviving
-// population is confined to much narrower latitudes than the full L-shell surface.
-//   Inner belt (L ≈ 1.2–2.0): loss cone ≈ ±38° magnetic latitude
-//   Outer belt (L ≈ 3.0–6.0): loss cone ≈ ±28° magnetic latitude
-const INNER_LAT_LIMIT = 38 * Math.PI / 180;
-const OUTER_LAT_LIMIT = 28 * Math.PI / 180;
+// Latitude limits for the depicted high-flux belt cores.
+// The belts are drawn as the HIGH-FLUX CORE regions (where trapped-particle
+// flux is near its peak in the AP8/AE8 models — Vette 1991), not the full
+// loss-cone-limited trapping envelope. The core populations are more
+// equatorially confined than the loss cone alone would allow, which is why
+// these limits are narrower than the ±38°/±28° loss-cone values.
+//   Inner belt core: ±35° magnetic latitude
+//   Outer belt core: ±22° magnetic latitude
+const INNER_LAT_LIMIT = 35 * Math.PI / 180;
+const OUTER_LAT_LIMIT = 22 * Math.PI / 180;
 
 /**
  * Radiation belt definitions.
- * Each belt is defined by inner/outer L-shell boundaries, particle loss-cone
- * latitude limit, and display properties.
+ * Each belt depicts the high-flux core: inner/outer L-shell boundaries bracket
+ * the flux peak rather than the maximum trapping extent.
+ *   Inner belt: proton flux (>10 MeV) peaks near L ≈ 1.5 (Selesnick et al. 2014).
+ *   Outer belt: electron flux (>1 MeV) peaks at L ≈ 4.0–4.5 (Reeves et al. 2013;
+ *   Li & Hudson 2019 review).
+ * Particle injection L-ranges in src/physics/particleDrift.js mirror these
+ * values — keep them in sync.
  */
 export const BELT_DEFINITIONS = [
   {
     name: 'innerBelt',
     label: 'Inner Belt',
-    lMin: 1.2,
-    lMax: 2.0,
+    lMin: 1.3,
+    lMax: 1.9,
     latLimit: INNER_LAT_LIMIT,
-    color: new THREE.Color(0.9, 0.4, 0.1), // warm orange/red
-    opacity: 0.12,
+    color: new THREE.Color(0.88, 0.14, 0.06), // crimson (reads NASA-red under full sun + ACES)
+    opacity: 0.95, // slider-relative multiplier (see updateBeltFlux)
   },
   {
     name: 'outerBelt',
     label: 'Outer Belt',
     lMin: 3.0,
-    lMax: 5.0,
+    lMax: 4.8, // core upper bound; expands to ~5.6 at Kp≥7 (Ganushkina et al. 2011)
     latLimit: OUTER_LAT_LIMIT,
-    color: new THREE.Color(0.0, 0.75, 0.75), // teal/cyan
-    opacity: 0.08,
+    color: new THREE.Color(0.05, 0.72, 0.72), // bright turquoise (NASA-teal under full sun + ACES)
+    opacity: 0.85, // slider-relative multiplier (see updateBeltFlux)
+  },
+  {
+    name: 'storageBelt',
+    label: 'Storage Belt (3rd)',
+    // Outer-boundary ultra-relativistic electron enhancement at L=6–8.5 Re.
+    // Appears beyond the outer belt's storm-time maximum (~5.6 Re at Kp=7),
+    // placing it clearly as the third outward ring: inner → outer → third.
+    lMin: 6.0,
+    lMax: 8.5,
+    latLimit: OUTER_LAT_LIMIT,              // ±22°, equatorial trapping geometry
+    color: new THREE.Color(0.55, 0.0, 0.9), // violet/purple
+    opacity: 0.8, // slider-relative multiplier (see updateBeltFlux)
   },
 ];
 
 /**
- * Build vertex positions for a single radiation belt using the analytic dipole
- * field-line formula. The belt is a toroid bounded by two L-shell surfaces and
- * capped at ±latLimit magnetic latitude.
+ * Build vertex positions for a single radiation belt as a smooth iso-flux-style
+ * toroid.
  *
- * Dipole field-line geometry at L-shell L, magnetic latitude λ:
+ * The cross-section is a closed, ROUNDED contour — an ellipse in (L, λ_m)
+ * space mapped through the dipole field-line geometry:
+ *   L(t) = L_mid + L_half·cos(t),  λ(t) = latLimit·sin(t),  t ∈ [0, 2π)
  *   ρ (equatorial distance) = L · cos³(λ)   [Earth radii = scene units]
  *   y (northward)           = L · cos²(λ) · sin(λ)
  *
- * Cross-section profile (closed loop in the meridional half-plane):
- *   inner L-shell from south lat to north lat  (nLat+1 points)
- *   outer L-shell from north lat to south lat  (nLat+1 points)
- * The connecting segments (top cap: inner-north→outer-north,
- * bottom cap: outer-south→inner-south) are implicit — they are the profile
- * "gaps" closed by the modular index wrapping in buildDipoleBeltIndices().
+ * This models an idealized iso-flux contour of the trapped-particle
+ * distribution (flux peaks at (L_mid, λ=0) and falls off smoothly in both L
+ * and latitude — cf. AP8/AE8 flux maps, Vette 1991). Iso-flux contours are
+ * smooth and rounded; bounding the belt by field-line walls with a hard
+ * latitude cutoff (the previous approach) produced unphysical sharp cusps at
+ * the tips and pushed the inner edge below Earth's surface
+ * (r = lMin·cos²λ < 1 at high |λ|). With the ellipse the minimum radius is
+ * L_mid·cos²(latLimit) — ≈1.07 Re for the inner belt, safely above the surface.
+ *
+ * The dipole mapping bends the low-L side of the ellipse around Earth, giving
+ * the classic concave-inner-edge crescent cross-section.
  */
 function buildDipoleBeltPositions(lMin, lMax, latLimitRad, nLat, nAz) {
+  const lMid  = (lMin + lMax) / 2;
+  const lHalf = (lMax - lMin) / 2;
+  const nP = 2 * nLat; // profile points around the closed contour
   const profile = [];
-  // Inner boundary is the fixed lMin L-shell throughout — it defines the concave
-  // inner face of the belt (Earth-side). Outer boundary tapers from lMax at the
-  // equator to lMin at ±latLimit where the two surfaces meet and close the tip.
-  // This produces a D-shaped / crescent cross-section: no waist, no pinch.
-  // taper(λ) = cos(π/2 · |λ|/latLimit) — 1 at equator, 0 at limits.
-  const taper = (lambda) => Math.cos((Math.PI / 2) * Math.abs(lambda) / latLimitRad);
 
-  // Inner L-shell: fixed at lMin, south lat → north lat
-  for (let i = 0; i <= nLat; i++) {
-    const lambda = -latLimitRad + (2 * latLimitRad * i) / nLat;
+  for (let i = 0; i < nP; i++) {
+    const t = (2 * Math.PI * i) / nP;
+    const L = lMid + lHalf * Math.cos(t);
+    const lambda = latLimitRad * Math.sin(t);
     const c = Math.cos(lambda);
     const s = Math.sin(lambda);
-    profile.push(lMin * c * c * c, lMin * c * c * s);
+    profile.push(L * c * c * c, L * c * c * s);
   }
 
-  // Outer L-shell: tapers lMax→lMin, north lat → south lat (reversed for closed loop)
-  for (let i = nLat; i >= 0; i--) {
-    const lambda = -latLimitRad + (2 * latLimitRad * i) / nLat;
-    const lEff = lMin + (lMax - lMin) * taper(lambda);
-    const c = Math.cos(lambda);
-    const s = Math.sin(lambda);
-    profile.push(lEff * c * c * c, lEff * c * c * s);
-  }
-
-  // profile is now a flat array of [rho, yNorth] pairs, length = 2*(nLat+1)
-  const nP = profile.length / 2; // number of profile points
+  // profile is a flat array of [rho, yNorth] pairs forming a closed loop
   const positions = new Float32Array((nAz + 1) * nP * 3);
 
   for (let iAz = 0; iAz <= nAz; iAz++) {
@@ -100,9 +114,7 @@ function buildDipoleBeltPositions(lMin, lMax, latLimitRad, nLat, nAz) {
 
 /**
  * Build triangle indices for a revolved belt profile.
- * Generates quads for the full ring including the two cap segments (the profile
- * "gap" between inner-north and outer-north, and outer-south and inner-south)
- * by wrapping with (iP + 1) % nP.
+ * The profile is a closed loop, so quads wrap end-to-end with (iP + 1) % nP.
  */
 function buildDipoleBeltIndices(nP, nAz) {
   const indices = [];
@@ -131,10 +143,11 @@ function buildDipoleBeltIndices(nP, nAz) {
  * @param {boolean} [options.showInnerBelt=true]
  * @param {boolean} [options.showOuterBelt=true]
  * @param {Array}   [options.clippingPlanes=[]]
- * @param {number}  [options.opacity]          - overrides per-belt default
+ * @param {number}  [options.opacity=0.85]     - user slider value; multiplied by per-belt opacity factor
  * @param {number}  [options.sunDirX=1]        - sun direction X (scene coords)
  * @param {number}  [options.sunDirZ=0]        - sun direction Z (scene coords)
  * @param {number}  [options.stormIntensity=0] - [0,1] for outer belt deformation
+ * @param {number}  [options.kp=0]             - Kp index [0-9] for dynamic outer belt lMax
  * @returns {THREE.Group}
  */
 export function buildRadiationBeltGroup(options = {}) {
@@ -146,6 +159,7 @@ export function buildRadiationBeltGroup(options = {}) {
     sunDirX = 1,
     sunDirZ = 0,
     stormIntensity = 0,
+    kp = 0,
   } = options;
 
   const group = new THREE.Group();
@@ -153,14 +167,27 @@ export function buildRadiationBeltGroup(options = {}) {
   const nAz  = 120;
 
   for (const def of BELT_DEFINITIONS) {
-    const show = (def.name === 'innerBelt' && showInnerBelt) ||
-                 (def.name === 'outerBelt' && showOuterBelt);
+    const show = (def.name === 'innerBelt'   && showInnerBelt) ||
+                 (def.name === 'outerBelt'   && showOuterBelt) ||
+                 (def.name === 'storageBelt' && showOuterBelt);
     if (!show) continue;
 
-    const { positions, nP } = buildDipoleBeltPositions(def.lMin, def.lMax, def.latLimit, nLat, nAz);
+    // Outer belt lMax expands during active conditions (Ganushkina et al. 2011):
+    // Kp=3 → 5.0 Re, Kp=5 → 5.4 Re, Kp≥7 → 5.8 Re
+    const effectiveLMax = def.name === 'outerBelt'
+      ? def.lMax + Math.min(0.8, Math.max(0, (kp - 3) / 4) * 0.8)
+      : def.lMax;
 
-    // Storm-time radial deformation for outer belt (inner belt is stable).
-    if (def.name === 'outerBelt' && stormIntensity > 0.01) {
+    const { positions, nP } = buildDipoleBeltPositions(def.lMin, effectiveLMax, def.latLimit, nLat, nAz);
+
+    // Storm-time radial deformation for the outer and storage belts.
+    // The inner belt (CRAND protons, L < 2) sits deep in the dipole and does
+    // not deform. The storage belt's FLUX is stable (no VLF scattering losses)
+    // but its GEOMETRY at L = 6–8.5 is shaped by the external field like the
+    // outer belt's — deforming both with the same radial scale also preserves
+    // the gap between them (the storm-expanded outer belt would otherwise
+    // stretch through the rigid storage belt on the nightside).
+    if ((def.name === 'outerBelt' || def.name === 'storageBelt') && stormIntensity > 0.01) {
       applyStormDeformation({ positions }, sunDirX, sunDirZ, stormIntensity);
     }
 
@@ -175,17 +202,19 @@ export function buildRadiationBeltGroup(options = {}) {
       color: def.color,
       emissive: def.color,
       emissiveIntensity: 0.15,
-      transparent: true,
-      opacity: opacity ?? def.opacity,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      roughness: 0.55,
+      transparent: true, // always transparent so opacity can animate without shader recompiles
+      opacity: (opacity ?? 0.85) * def.opacity,
+      depthWrite: false, // updated per-frame in updateBeltFlux based on effective opacity
+      side: THREE.DoubleSide, // interior surface visible at clip cuts
+      roughness: 0.4,
+      clearcoat: 0.3,
+      clearcoatRoughness: 0.35,
       metalness: 0.0,
       clippingPlanes,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = def.name === 'innerBelt' ? 10 : 11;
+    mesh.renderOrder = def.name === 'innerBelt' ? 10 : def.name === 'outerBelt' ? 11 : 12;
     mesh.userData.beltName = def.name;
     group.add(mesh);
   }
@@ -210,8 +239,8 @@ export function disposeRadiationBeltGroup(group) {
  * During geomagnetic storms the outer belt is compressed on the dayside
  * (solar wind ram pressure) and stretched on the nightside. The deformation
  * is a per-vertex radial scale based on the vertex's azimuthal angle relative
- * to the sun direction. Only used for the outer belt — the inner belt (CRAND
- * protons) is stable and does not deform meaningfully.
+ * to the sun direction. Used for the outer and storage belts — the inner belt
+ * (CRAND protons, deep in the dipole) does not deform meaningfully.
  *
  * @param {{ positions: Float32Array }} surface - vertex positions mutated in place
  * @param {number} sunDirX - X component of normalized sun direction (scene coords)
@@ -237,17 +266,10 @@ export function applyStormDeformation(surface, sunDirX, sunDirZ, stormIntensity,
   }
 }
 
-/**
- * Update opacity on all radiation belt meshes.
- */
-export function updateBeltOpacity(group, opacity) {
-  if (!group) return;
-  group.traverse((obj) => {
-    if (obj.material && obj.material.opacity !== undefined) {
-      obj.material.opacity = opacity;
-    }
-  });
-}
+// Above this effective opacity a belt is "solid enough" that writing depth gives
+// correct occlusion; below it, depthWrite would visibly clip other transparent
+// layers (particles, fainter belts) and is left off as before.
+const DEPTH_WRITE_OPACITY_THRESHOLD = 0.55;
 
 /**
  * Update radiation belt material properties to encode particle flux intensity.
@@ -255,11 +277,14 @@ export function updateBeltOpacity(group, opacity) {
  * Called from main.js animate() loop with smoothly-lerped flux values so that
  * belt appearance changes are gradual rather than jarring.
  *
- * The existing updateBeltOpacity() GUI slider still works — it is the user's
- * overall brightness knob. flux modulates within the range it implies.
+ * baseOpacity (the GUI slider) is the target opacity itself: at the default
+ * 0.85 the belts render as solid NASA-illustration-style tori; low values
+ * (~0.1–0.3) give translucent belts so particles, satellites, and field lines
+ * remain visible through them. Flux primarily modulates brightness/emissive —
+ * the storm signal is carried by glow and color whitening, not by fading.
  *
- * Inner belt (CRAND protons): relatively stable opacity, modest glow variation.
- * Outer belt (storm electrons): wider opacity range, color shifts blue→blue-white
+ * Inner belt (CRAND protons): stable — modest glow variation only.
+ * Outer belt (storm electrons): emissive surges and shifts teal→teal-white
  *   at high flux (representing dense relativistic electron population).
  *
  * @param {THREE.Group} group - radiationBeltGroup from buildRadiationBeltGroup()
@@ -268,41 +293,59 @@ export function updateBeltOpacity(group, opacity) {
  */
 export function updateBeltFlux(group, flux, baseOpacity) {
   if (!group) return;
-  // Scale factor: beltOpacity default is 0.15; normalise so slider works as before.
-  const opacityScale = baseOpacity / 0.15;
 
   group.traverse((obj) => {
     if (!obj.isMesh || !obj.material) return;
     const name = obj.userData.beltName;
 
     if (name === 'innerBelt') {
-      // Inner belt: opacity range [0.06, 0.16], glow range [0.08, 0.22]
-      // Relatively constant — CRAND is not storm-driven.
+      // Stable CRAND source: near-constant opacity, modest glow variation.
       // Emissive kept low so the sun directional light provides visible shading.
-      obj.material.opacity = Math.min(1, (0.06 + 0.10 * flux.innerFlux) * opacityScale);
-      obj.material.emissiveIntensity = 0.08 + 0.14 * flux.innerFlux;
+      obj.material.opacity = Math.min(1, baseOpacity * (0.95 + 0.05 * flux.innerFlux));
+      obj.material.emissiveIntensity = 0.12 + 0.18 * flux.innerFlux;
       // Colour stays warm orange — no hue shift for stable inner belt.
 
     } else if (name === 'outerBelt') {
-      // Outer belt: opacity range [0.03, 0.23], glow range [0.05, 0.22]
-      // Highly dynamic — electrons surge during storms.
-      // Emissive kept low so diffuse lighting gives 3D definition; night side
-      // remains visible from ambient (0x333344, 0.5) + low emissive floor.
-      obj.material.opacity = Math.min(1, (0.03 + 0.20 * flux.outerFlux) * opacityScale);
-      obj.material.emissiveIntensity = 0.05 + 0.17 * flux.outerFlux;
+      // Storm-driven electrons: brightness surges with flux while opacity stays
+      // near the slider value. Night side remains visible from ambient
+      // (0x333344, 0.5) + the emissive floor.
+      obj.material.opacity = Math.min(1, baseOpacity * (0.85 + 0.15 * flux.outerFlux));
+      obj.material.emissiveIntensity = 0.10 + 0.30 * flux.outerFlux;
 
-      // Colour shift: lerp emissive from base teal [0.0, 0.75, 0.75] toward
-      // teal-white [0.5, 1.0, 1.0] as flux rises, representing the denser
-      // (brighter) relativistic electron population during storms.
+      // Colour shift: lerp emissive from base turquoise [0.05, 0.72, 0.72]
+      // toward teal-white [0.55, 1.0, 1.0] as flux rises, representing the
+      // denser (brighter) relativistic electron population during storms.
       // Max blend factor 0.7 — keeps recognisably teal even at peak flux.
       const t = flux.outerFlux * 0.7;
       obj.material.emissive.setRGB(
-        0.0 + 0.5 * t,
-        0.75 + 0.25 * t,
-        0.75 + 0.25 * t,
+        0.05 + 0.5 * t,
+        0.72 + 0.28 * t,
+        0.72 + 0.28 * t,
+      );
+      obj.material.needsUpdate = true;
+
+    } else if (name === 'storageBelt') {
+      // Storage (third) belt: completely invisible at quiet conditions; fades in
+      // during geomagnetic storms as storageBeltFlux rises above zero.
+      // Colour shifts from violet [0.55, 0.0, 0.9] toward bright violet-white
+      // at peak flux, distinguishing ultra-relativistic electrons (>2 MeV) from
+      // the teal outer belt electrons.
+      // Baker et al. 2013 (Science), Shprits et al. 2013 (Nature Physics).
+      const sf = flux.storageBeltFlux ?? 0;
+      obj.material.opacity = Math.min(1, baseOpacity * 0.9 * sf);
+      obj.material.emissiveIntensity = 0.08 + 0.30 * sf;
+      const t = sf * 0.6;
+      obj.material.emissive.setRGB(
+        0.55 + 0.45 * t,
+        0.0  + 0.6  * t,
+        0.9  + 0.1  * t,
       );
       obj.material.needsUpdate = true;
     }
+
+    // Solid belts write depth for correct occlusion; translucent ones don't.
+    // depthWrite is render state — no shader recompile / needsUpdate required.
+    obj.material.depthWrite = obj.material.opacity > DEPTH_WRITE_OPACITY_THRESHOLD;
   });
 }
 

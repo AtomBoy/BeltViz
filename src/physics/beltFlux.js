@@ -2,7 +2,7 @@
  * src/physics/beltFlux.js
  *
  * Empirical model mapping solar wind conditions (Kp, Dst) to relative particle
- * flux in the inner and outer Van Allen radiation belts.
+ * flux in the inner, outer, and storage (third) Van Allen radiation belts.
  *
  * All functions are pure with no DOM or Three.js dependencies.
  *
@@ -14,6 +14,16 @@
  *   - Baker et al. (2004), Nature 432, 878–881, doi:10.1038/nature03116
  *     Slot region (L = 2–3) fills transiently during extreme geomagnetic
  *     storms (Dst < −100 nT).
+ *   - Baker et al. (2013), Science 340, 186–190, doi:10.1126/science.1233518
+ *     Discovery of a long-lived third radiation belt ("storage ring") at
+ *     L ≈ 3.0–3.5 Re during geomagnetic storms; ultra-relativistic electrons
+ *     >2 MeV trapped stably because VLF scattering is suppressed there.
+ *   - Shprits et al. (2013), Nature Physics 9, 699–703, doi:10.1038/nphys2760
+ *     Mechanism for unusual stable trapping of ultra-relativistic electrons;
+ *     ULF wave radial transport drives inward diffusion while EMIC and VLF
+ *     waves are absent at these L-shells during the recovery phase.
+ *   - Ganushkina et al. (2011), JGR 116, A09234, doi:10.1029/2010JA016376
+ *     Observed outer belt boundary expands to L ≈ 5.5–6.0 at Kp ≥ 5–6.
  */
 
 const PROTON_MASS_KG = 1.6726e-27;
@@ -63,9 +73,17 @@ export function computeKp(swParams) {
  *   slotFlux = clamp((|Dst| − 100) / 100, 0, 0.6)  for Dst ≤ −100 nT
  *   (Baker et al. 2004: slot fills transiently during extreme storms.)
  *
+ * Storage belt / third belt (L ≈ 2.8–3.5 Re):
+ *   storageBeltFlux = dstFactor × kpFactor
+ *   where dstFactor = clamp((|Dst| − 50) / 100, 0, 1)  for Dst < −50 nT
+ *         kpFactor  = clamp((Kp − 2.5) / 3.5, 0, 1)
+ *   (Baker et al. 2013: forms during storms with Dst < −50 nT and Kp ≥ 3;
+ *    Shprits et al. 2013: ultra-relativistic electrons trapped by ULF radial
+ *    diffusion while VLF scattering is absent at these L-shells.)
+ *
  * @param {number} kp   Kp index in [0, 9]
  * @param {number} dst  Dst index in nT (negative during storms)
- * @returns {{ innerFlux: number, outerFlux: number, slotFlux: number }}
+ * @returns {{ innerFlux: number, outerFlux: number, slotFlux: number, storageBeltFlux: number }}
  */
 export function computeBeltFlux(kp, dst) {
   const innerFlux = 0.65;
@@ -73,5 +91,12 @@ export function computeBeltFlux(kp, dst) {
   const slotFlux  = dst < -100
     ? Math.min(0.6, Math.max(0, (-dst - 100) / 100))
     : 0;
-  return { innerFlux, outerFlux, slotFlux };
+
+  // Third (storage) belt: dual threshold on both Dst and Kp.
+  // Invisible at quiet conditions; emerges gradually above Dst=−50 nT and Kp=2.5.
+  const dstFactor = dst < -50 ? Math.min(1, (-dst - 50) / 100) : 0;
+  const kpFactor  = Math.min(1, Math.max(0, (kp - 2.5) / 3.5));
+  const storageBeltFlux = dstFactor * kpFactor;
+
+  return { innerFlux, outerFlux, slotFlux, storageBeltFlux };
 }

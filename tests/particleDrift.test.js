@@ -13,6 +13,7 @@ import {
   innerBeltElectronRate,
   innerBeltElectronLRange,
   ringCurrentLRange,
+  beltConfinedLambdaMax,
 } from '../src/physics/particleDrift.js';
 
 // ─── driftRate ────────────────────────────────────────────────────────────────
@@ -198,10 +199,10 @@ describe('crandInjectionRate', () => {
 // ─── innerBeltLRange ──────────────────────────────────────────────────────────
 
 describe('innerBeltLRange', () => {
-  it('returns lMin = 1.2 and lMax = 2.0 (constant)', () => {
+  it('returns lMin = 1.3 and lMax = 1.9 (constant, matches belt core mesh)', () => {
     const { lMin, lMax } = innerBeltLRange();
-    expect(lMin).toBeCloseTo(1.2, 5);
-    expect(lMax).toBeCloseTo(2.0, 5);
+    expect(lMin).toBeCloseTo(1.3, 5);
+    expect(lMax).toBeCloseTo(1.9, 5);
   });
 
   it('lMin < lMax', () => {
@@ -262,10 +263,10 @@ describe('innerBeltElectronRate', () => {
 // ─── innerBeltElectronLRange ──────────────────────────────────────────────────
 
 describe('innerBeltElectronLRange', () => {
-  it('returns lMin = 1.5 and lMax = 2.0 (outer portion of inner belt)', () => {
+  it('returns lMin = 1.5 and lMax = 1.9 (outer portion of inner belt)', () => {
     const { lMin, lMax } = innerBeltElectronLRange();
     expect(lMin).toBeCloseTo(1.5, 5);
-    expect(lMax).toBeCloseTo(2.0, 5);
+    expect(lMax).toBeCloseTo(1.9, 5);
   });
 
   it('lMin < lMax', () => {
@@ -274,7 +275,7 @@ describe('innerBeltElectronLRange', () => {
   });
 
   it('electron range is nested inside the CRAND proton range (lMin ≥ CRAND lMin)', () => {
-    // CRAND protons fill L=1.2–2.0; diffusion electrons only reach L=1.5–2.0
+    // CRAND protons fill L=1.3–1.9; diffusion electrons only reach L=1.5–1.9
     const { lMin: eLMin } = innerBeltElectronLRange();
     const { lMin: pLMin } = innerBeltLRange();
     expect(eLMin).toBeGreaterThanOrEqual(pLMin);
@@ -314,5 +315,69 @@ describe('ringCurrentLRange', () => {
       expect(lMin).toBeGreaterThanOrEqual(1);
       expect(lMax).toBeLessThanOrEqual(7);
     }
+  });
+});
+
+// ─── beltConfinedLambdaMax ────────────────────────────────────────────────────
+
+describe('beltConfinedLambdaMax', () => {
+  const LAT = 22 * Math.PI / 180; // outer belt core latitude limit
+
+  it('returns 0 at L = lMin (rounded contour pinches to the equator)', () => {
+    expect(beltConfinedLambdaMax(3.0, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+  });
+
+  it('returns 0 for L outside the belt (below lMin or beyond lMax)', () => {
+    expect(beltConfinedLambdaMax(2.2, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+    expect(beltConfinedLambdaMax(5.5, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+  });
+
+  it('returns 0 at L = lMax (contour pinches to the equator)', () => {
+    expect(beltConfinedLambdaMax(4.8, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+  });
+
+  it('peaks at the full latLimit at the belt centre L_mid', () => {
+    expect(beltConfinedLambdaMax(3.9, 3.0, 4.8, LAT)).toBeCloseTo(LAT, 10);
+  });
+
+  it('rises from lMin to L_mid, then falls to lMax', () => {
+    let prev = -Infinity;
+    for (let L = 3.0; L <= 3.9 + 1e-9; L += 0.15) {
+      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
+      expect(lam).toBeGreaterThanOrEqual(prev);
+      prev = lam;
+    }
+    for (let L = 3.9; L <= 4.8 + 1e-9; L += 0.15) {
+      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
+      expect(lam).toBeLessThanOrEqual(prev + 1e-12);
+      prev = lam;
+    }
+  });
+
+  it('is symmetric about L_mid', () => {
+    for (const dL of [0.2, 0.5, 0.8]) {
+      expect(beltConfinedLambdaMax(3.9 + dL, 3.0, 4.8, LAT))
+        .toBeCloseTo(beltConfinedLambdaMax(3.9 - dL, 3.0, 4.8, LAT), 10);
+    }
+  });
+
+  it('lies exactly on the mesh cross-section ellipse ((L−L_mid)/L_half)² + (λ/latLimit)² = 1', () => {
+    for (const L of [3.2, 3.6, 4.5]) {
+      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
+      const f = (L - 3.9) / 0.9;
+      expect(f * f + (lam / LAT) * (lam / LAT)).toBeCloseTo(1, 10);
+    }
+  });
+
+  it('stays within [0, latLimit] for any input', () => {
+    for (const L of [0.5, 1, 2, 3, 3.5, 4, 4.4, 5, 10]) {
+      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
+      expect(lam).toBeGreaterThanOrEqual(0);
+      expect(lam).toBeLessThanOrEqual(LAT);
+    }
+  });
+
+  it('returns 0 for a degenerate belt (lMax <= lMin)', () => {
+    expect(beltConfinedLambdaMax(3.0, 3.0, 3.0, LAT)).toBe(0);
   });
 });

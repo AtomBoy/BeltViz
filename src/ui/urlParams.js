@@ -29,7 +29,7 @@ const DEFAULTS = {
   isoOpacity:          0.2,
   showInnerBelt:       false,
   showOuterBelt:       false,
-  beltOpacity:         0.15,
+  beltOpacity:         0.85,
   clipEquatorial:      false,
   clipMeridional:      false,
   clipMeridionalAngle: 0,

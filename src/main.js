@@ -61,7 +61,7 @@ const params = {
   // Radiation belt params
   showInnerBelt: false,
   showOuterBelt: false,
-  beltOpacity: 0.15,
+  beltOpacity: 0.85,
   // Clipping params
   clipEquatorial: false,
   clipMeridional: false,
@@ -79,6 +79,8 @@ const params = {
   sunLongitude: 0,      // internal — computed from datetime, not a user slider
   sunDeclination: 0,    // internal — computed from datetime
   showMagnetopause: false,
+  showBowShock: false,
+  colorByB: false,
   // Date & Time params (internal — driven by timeline, not lil-gui)
   datetimeString: '2025-11-06T00:00',
   // Particle system
@@ -214,6 +216,7 @@ let fieldLineGroup = null;
 let fieldLineBuildId = 0;      // generation counter — stale worker responses are ignored
 let pendingMorphDuration = 8200; // stored when rebuild is dispatched, used when reply arrives
 let fieldLineWorker = null;
+let forceFullRebuild = false;  // set true when material mode changes (colorByB toggle) so the transition is skipped
 let coeffs = null;
 
 // --- IGRF epoch interpolation ---
@@ -303,8 +306,16 @@ function getOrCreateFieldLineWorker() {
  */
 function onFieldLineWorkerMessage(e) {
   const { type, buildId, tracedLines } = e.data;
-  if (type !== 'fieldLinesReady') return;
   if (buildId !== fieldLineBuildId) return; // newer rebuild was requested — discard
+
+  if (type === 'progress') {
+    const loading = document.getElementById('loading');
+    if (loading && loading.style.display !== 'none') {
+      loading.textContent = `Computing field lines... ${e.data.percent}%`;
+    }
+    return;
+  }
+  if (type !== 'fieldLinesReady') return;
 
   // Pre-filter: skip lines that would produce a degenerate mesh (< 2 points).
   const renderableLines = tracedLines.filter((l) => l.points.length >= 2);
@@ -313,11 +324,15 @@ function onFieldLineWorkerMessage(e) {
     fieldLineGroup !== null &&
     fieldLineGroup.children.length === renderableLines.length;
 
-  if (sameTopology) {
+  // forceFullRebuild is set when the material mode changes (e.g. colorByB toggle).
+  // A morph transition only updates vertex positions, not colors or material flags,
+  // so we must do a full dispose+rebuild to apply the new coloring.
+  if (sameTopology && !forceFullRebuild) {
     startFieldLineTransition(renderableLines, pendingMorphDuration);
   } else {
     rebuildFieldLinesFull(renderableLines);
   }
+  forceFullRebuild = false;
 
   const loading = document.getElementById('loading');
   if (loading) loading.style.display = 'none';
@@ -334,7 +349,10 @@ function rebuildFieldLines(morphDuration = 8200, showIndicator = true) {
 
   if (showIndicator) {
     const loading = document.getElementById('loading');
-    if (loading) loading.style.display = '';
+    if (loading) {
+      loading.textContent = 'Computing field lines...';
+      loading.style.display = '';
+    }
   }
 
   // Snapshot solar wind params so all seeds use a consistent sun position
@@ -373,6 +391,7 @@ function rebuildFieldLinesFull(tracedLines) {
   fieldLineGroup = buildFieldLineGroup(tracedLines, latitudeToColor, {
     radius: params.tubeRadius,
     tubularSegments: TUBE_SEGMENTS,
+    colorByB: params.colorByB,
   });
   fieldLineGroup.visible = params.showFieldLines;
   scene.add(fieldLineGroup);
@@ -397,6 +416,7 @@ function startFieldLineTransition(newTracedLines, duration = 8200) {
       color: latitudeToColor(line.lat),
       radius: params.tubeRadius,
       tubularSegments: TUBE_SEGMENTS,
+      colorByB: params.colorByB,
     });
 
     if (!targetMesh) {
@@ -477,7 +497,7 @@ let isosurfaceGroup = null;
 // --- Radiation belt state ---
 let radiationBeltGroup = null;
 // Smoothed belt flux — lerped each frame so belt brightness changes are gradual.
-let currentBeltFlux = { innerFlux: 0.65, outerFlux: 0.1, slotFlux: 0.0 };
+let currentBeltFlux = { innerFlux: 0.65, outerFlux: 0.1, slotFlux: 0.0, storageBeltFlux: 0.0 };
 
 /**
  * Grid bounds in scene coordinates.
@@ -704,6 +724,9 @@ function buildAndRenderBelts() {
     params.clipMeridional
   );
 
+  const swParamsForBelt = getSolarWindParams();
+  const kpForBelt = computeKp(swParamsForBelt);
+
   radiationBeltGroup = buildRadiationBeltGroup({
     showInnerBelt: params.showInnerBelt,
     showOuterBelt: params.showOuterBelt,
@@ -712,6 +735,7 @@ function buildAndRenderBelts() {
     sunDirX: Math.cos(sunLonRad),
     sunDirZ: Math.sin(sunLonRad),
     stormIntensity: Math.min(1, Math.abs(params.dst) / 150),
+    kp: kpForBelt,
   });
 
   radiationBeltGroup.quaternion.copy(getDipoleQuaternion());
@@ -901,9 +925,11 @@ function updateDatetime(isPeriodicUpdate = false) {
   if (params.solarWindEnabled) {
     rebuildFieldLines(isPeriodicUpdate ? 8200 : 1000, !isPeriodicUpdate);
     if (params.showIsosurfaces) rebuildIsosurfaces();
-    if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
     if (params.showMagnetopause) rebuildMagnetopause();
   }
+  // Belts don't require solar wind (Kp falls back to 0 / quiet shape) — build
+  // them even when solar wind is disabled, e.g. restoring a sw=false URL.
+  if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   // Force satellite re-propagation to the new simulation time
   if (params.satellites.enabled && satelliteSwarm) lastPropTime = 0;
   scheduleUrlWrite(params, camera);
@@ -967,6 +993,7 @@ function onSolarWindChange() {
   if (params.showIsosurfaces) rebuildIsosurfaces();
   if (params.showInnerBelt || params.showOuterBelt) rebuildRadiationBelts();
   if (params.showMagnetopause) rebuildMagnetopause();
+  if (params.showBowShock) rebuildBowShock();
   if (timeline) { const swp = getSolarWindParams(); timeline.updateGauges(computeKp(swp), swp?.dst ?? 0, swp?.imfBz ?? 0); }
   scheduleUrlWrite(params, camera);
 }
@@ -1231,6 +1258,38 @@ function onMagnetopauseChange() {
   scheduleUrlWrite(params, camera);
 }
 
+// --- Bow shock mesh state ---
+let bowShockGroup = null;
+
+function rebuildBowShock() {
+  if (bowShockGroup) {
+    scene.remove(bowShockGroup);
+    bowShockGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    bowShockGroup = null;
+  }
+
+  if (!params.showBowShock || !params.solarWindEnabled) return;
+
+  import('./scene/bowShockMesh.js').then(({ buildBowShockMesh }) => {
+    bowShockGroup = buildBowShockMesh(getSolarWindParams());
+    if (bowShockGroup) scene.add(bowShockGroup);
+  });
+}
+
+function onBowShockChange() {
+  rebuildBowShock();
+  scheduleUrlWrite(params, camera);
+}
+
+function onColorByBChange() {
+  forceFullRebuild = true;
+  rebuildFieldLines(1000);
+  scheduleUrlWrite(params, camera);
+}
+
 // --- UI ---
 createInfoOverlay();
 let timeline; // declared before GUI so lightUpdateDatetime can reference it
@@ -1246,6 +1305,8 @@ const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onSatelliteSearchOpen: () => toggleSatellitePanel(),
   onSolarWindChange,
   onMagnetopauseChange,
+  onBowShockChange,
+  onColorByBChange,
   // Particle / aurora changes are handled by the per-frame update() calls;
   // no expensive rebuilds are needed when the user changes these params.
   onParticleChange: () => scheduleUrlWrite(params, camera),
@@ -1317,9 +1378,10 @@ function animate(now = performance.now()) {
     const dst = swParams?.dst ?? params.dst;
     const target = computeBeltFlux(kp, dst);
     const alpha = 0.02; // ~3 s time constant at 60 fps
-    currentBeltFlux.innerFlux += alpha * (target.innerFlux - currentBeltFlux.innerFlux);
-    currentBeltFlux.outerFlux += alpha * (target.outerFlux - currentBeltFlux.outerFlux);
-    currentBeltFlux.slotFlux  += alpha * (target.slotFlux  - currentBeltFlux.slotFlux);
+    currentBeltFlux.innerFlux       += alpha * (target.innerFlux       - currentBeltFlux.innerFlux);
+    currentBeltFlux.outerFlux       += alpha * (target.outerFlux       - currentBeltFlux.outerFlux);
+    currentBeltFlux.slotFlux        += alpha * (target.slotFlux        - currentBeltFlux.slotFlux);
+    currentBeltFlux.storageBeltFlux += alpha * (target.storageBeltFlux - currentBeltFlux.storageBeltFlux);
     updateBeltFlux(radiationBeltGroup, currentBeltFlux, params.beltOpacity);
   }
 

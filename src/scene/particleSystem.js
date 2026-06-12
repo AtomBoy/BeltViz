@@ -16,13 +16,13 @@
  *
  * Four physically distinct populations are simulated:
  *
- *   (A) Inner belt protons (L = 1.2–2.0) — CRAND source:
+ *   (A) Inner belt protons (L = 1.3–1.9) — CRAND source:
  *     Cosmic Ray Albedo Neutron Decay: galactic cosmic rays hit the upper
  *     atmosphere → neutrons → decay to protons in flight. Source is constant,
  *     azimuthally uniform, and independent of solar wind. Drift WESTWARD.
  *     Long-lived (300–600 s visual). Orange.
  *
- *   (B) Inner belt electrons (L = 1.5–2.0) — inward diffusion:
+ *   (B) Inner belt electrons (L = 1.5–1.9) — inward diffusion:
  *     Electrons diffuse inward from the outer belt and accumulate in the outer
  *     portion of the inner belt. Constant slow trickle, azimuthally uniform.
  *     Drift EASTWARD — visibly faster than the colocated protons.
@@ -52,10 +52,18 @@
 import * as THREE from 'three';
 import {
   ELECTRON, PROTON,
-  driftRate, injectionRate,
+  driftRate, injectionRate, beltConfinedLambdaMax,
   outerBeltLRange, crandInjectionRate, innerBeltLRange, innerBeltLifetime,
   innerBeltElectronRate, innerBeltElectronLRange, ringCurrentLRange,
 } from '../physics/particleDrift.js';
+import { BELT_DEFINITIONS } from './radiationBelts.js';
+
+// Belt core mesh boundaries — used to confine belt populations (A, B, C) inside
+// the rendered belt geometry. Ring current protons (D) are deliberately NOT
+// confined: the ring current is a physically distinct population that occupies
+// the slot region and is not part of either radiation belt.
+const INNER_BELT_DEF = BELT_DEFINITIONS.find((d) => d.name === 'innerBelt');
+const OUTER_BELT_DEF = BELT_DEFINITIONS.find((d) => d.name === 'outerBelt');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -252,8 +260,19 @@ export function createParticleSystem(scene) {
 
   // ── Shared low-level injector ───────────────────────────────────────────────
 
-  function placeParticle(slot, L, phi, speciesCode, energyMeV, lifetime, col, pop) {
-    const maxLambda = Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.35;
+  /**
+   * @param {number} [lambdaCap=Infinity] Max |magnetic latitude| (rad) from the
+   *   belt mesh taper — keeps belt populations inside the rendered belt tips.
+   *   Infinity = unconfined (ring current).
+   */
+  function placeParticle(slot, L, phi, speciesCode, energyMeV, lifetime, col, pop, lambdaCap = Infinity) {
+    // Physical bounce spread (0.35 factor keeps particles near the equatorial
+    // plane), further capped by the belt mesh taper so particles don't poke
+    // out of the tapered belt tips at high L.
+    const maxLambda = Math.min(
+      Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.35,
+      0.9 * lambdaCap,
+    );
     const lambdaM   = (Math.random() - 0.5) * 2 * maxLambda;
     const rate      = driftRate(L, energyMeV, speciesCode) * VISUAL_DRIFT_SCALE;
     const cosLM     = Math.cos(lambdaM);
@@ -288,7 +307,8 @@ export function createParticleSystem(scene) {
     const { lMin, lMax } = innerBeltLRange();
     const L   = lMin + Math.random() * (lMax - lMin);
     const phi = Math.random() * Math.PI * 2; // uniform — CRAND is azimuthally symmetric
-    placeParticle(slot, L, phi, PROTON, CRAND_PROTON_ENERGY_MEV, innerBeltLifetime(L), COL_PROTON, 0);
+    const cap = beltConfinedLambdaMax(L, INNER_BELT_DEF.lMin, INNER_BELT_DEF.lMax, INNER_BELT_DEF.latLimit);
+    placeParticle(slot, L, phi, PROTON, CRAND_PROTON_ENERGY_MEV, innerBeltLifetime(L), COL_PROTON, 0, cap);
   }
 
   // ── (B) Inner belt electrons — inward diffusion ─────────────────────────────
@@ -299,7 +319,8 @@ export function createParticleSystem(scene) {
     const { lMin, lMax } = innerBeltElectronLRange();
     const L   = lMin + Math.random() * (lMax - lMin);
     const phi = Math.random() * Math.PI * 2; // uniform — diffusion is azimuthally symmetric
-    placeParticle(slot, L, phi, ELECTRON, INNER_ELECTRON_ENERGY_MEV, INNER_ELECTRON_LIFETIME, COL_ELECTRON, 1);
+    const cap = beltConfinedLambdaMax(L, INNER_BELT_DEF.lMin, INNER_BELT_DEF.lMax, INNER_BELT_DEF.latLimit);
+    placeParticle(slot, L, phi, ELECTRON, INNER_ELECTRON_ENERGY_MEV, INNER_ELECTRON_LIFETIME, COL_ELECTRON, 1, cap);
   }
 
   // ── (C) Outer belt electrons — storm injection ──────────────────────────────
@@ -317,7 +338,13 @@ export function createParticleSystem(scene) {
 
     // Nightside injection (anti-solar direction ± 90°).
     const phi = (Math.PI - sunLonRad) + (Math.random() - 0.5) * Math.PI;
-    placeParticle(slot, L, phi, ELECTRON, energyMeV, outerBeltRealLifetime(L), COL_ELECTRON, 2);
+    // Confine to the outer belt mesh contour. Storm-time injections below the
+    // mesh's lMin (slot filling) are intentionally outside the rendered belt
+    // and keep the unconfined physical spread.
+    const cap = L < OUTER_BELT_DEF.lMin
+      ? Infinity
+      : beltConfinedLambdaMax(L, OUTER_BELT_DEF.lMin, OUTER_BELT_DEF.lMax, OUTER_BELT_DEF.latLimit);
+    placeParticle(slot, L, phi, ELECTRON, energyMeV, outerBeltRealLifetime(L), COL_ELECTRON, 2, cap);
   }
 
   // ── (D) Ring current protons — storm injection ──────────────────────────────
@@ -326,6 +353,8 @@ export function createParticleSystem(scene) {
     const { lMin, lMax } = ringCurrentLRange(dst);
     const L = lMin + Math.random() * (lMax - lMin);
     // No slot guard — protons can freely occupy the slot region.
+    // No belt-mesh latitude cap either: the ring current is a distinct
+    // population from the radiation belts and is not drawn as a belt mesh.
 
     const slot = findSlot();
     if (slot === -1) return;

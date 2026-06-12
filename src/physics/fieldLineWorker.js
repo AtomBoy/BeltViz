@@ -14,6 +14,7 @@
  * Main → Worker  { buildId, latitudes, nLongitudes, bothHemispheres,
  *                  polarCapLatitudes, coeffs, maxDegree, solarWindParams }
  *
+ * Worker → Main  { type: 'progress', buildId, percent }
  * Worker → Main  { type: 'fieldLinesReady', buildId,
  *                  tracedLines: [{ points: [[x,y,z], …], lat, lon }, …] }
  *
@@ -43,7 +44,9 @@ self.onmessage = function (e) {
   });
 
   const tracedLines = [];
-  for (const seed of seeds) {
+  let lastProgress = 0;
+  for (let i = 0; i < seeds.length; i++) {
+    const seed = seeds[i];
     const points = traceFieldLine(seed.x, seed.y, seed.z, coeffs, {
       maxDegree,
       solarWindParams,
@@ -54,6 +57,12 @@ self.onmessage = function (e) {
     const OPEN_THRESHOLD_SQ = (6371.2 * 2) ** 2; // 2 Re in km, squared
     const isOpen = r0sq > OPEN_THRESHOLD_SQ || r1sq > OPEN_THRESHOLD_SQ;
     tracedLines.push({ points, lat: seed.lat, lon: seed.lon, isOpen });
+
+    const percent = Math.round(((i + 1) / seeds.length) * 100);
+    if (percent >= lastProgress + 5 || (percent === 100 && lastProgress < 100)) {
+      lastProgress = percent;
+      self.postMessage({ type: 'progress', buildId, percent });
+    }
   }
 
   self.postMessage({ type: 'fieldLinesReady', buildId, tracedLines });
