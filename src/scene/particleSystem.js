@@ -55,6 +55,7 @@ import {
   driftRate, injectionRate, beltConfinedLambdaMax,
   outerBeltLRange, crandInjectionRate, innerBeltLRange, innerBeltLifetime,
   innerBeltElectronRate, innerBeltElectronLRange, ringCurrentLRange,
+  computeBudgets, BASE_INJECT_RATE, BASE_RING_CURRENT_RATE,
 } from '../physics/particleDrift.js';
 import { BELT_DEFINITIONS } from './radiationBelts.js';
 
@@ -72,13 +73,6 @@ const MAX_PARTICLES = 2000;
 // Physics: L=4, E=1 MeV electron drift period = 1.05/(4×1) h ≈ 945 s.
 // Visual target: ~2.5 min per orbit → scale = 945 / 150 = 6.3
 const VISUAL_DRIFT_SCALE = 6.3;
-
-// Baseline outer belt electrons per real second at quiet conditions (Dst ≥ −20 nT).
-const BASE_INJECT_RATE = 20;
-
-// Ring current proton base rate: ~20% of outer electron rate.
-// Ring current protons coexist with outer electrons, slightly weighted lower.
-const BASE_RING_CURRENT_RATE = 4;
 
 // On first enable, inject these fractions of maxCount immediately.
 const BURST_CRAND_PROTON    = 0.20; // inner belt protons (CRAND)
@@ -111,49 +105,12 @@ const RING_CURRENT_PROTON_ENERGY_MEV = 10;
 // Inner electrons: moderate (longer than outer electrons, shorter than CRAND protons).
 const INNER_ELECTRON_LIFETIME = 120; // seconds
 
-// Representative mean lifetimes for budget computation (Little's Law: N_steady = rate × τ).
-// These are averages across each population's L-range, used only for budget allocation.
-const AVG_CRAND_LIFETIME          = 450; // innerBeltLifetime midpoint at L ≈ 1.6
-const AVG_INNER_ELECTRON_LIFETIME = 120; // equals INNER_ELECTRON_LIFETIME (constant)
-const AVG_OUTER_ELECTRON_LIFETIME =  35; // mix: 45s (L < 4) + 25s (L ≥ 4)
-const AVG_RING_PROTON_LIFETIME    =  40; // skewed lower-L vs outer electrons → slightly longer
+// Budget computation (computeBudgets) lives in physics/particleDrift.js —
+// pure Little's Law allocation, unit-tested in tests/particleDrift.test.js.
 
 // Particle colours by species (additive-blend friendly)
 const COL_ELECTRON = new THREE.Color(0x3399ff); // blue-white (electrons)
 const COL_PROTON   = new THREE.Color(0xff6622); // orange-red (protons)
-
-// ─── Budget computation (Little's Law) ────────────────────────────────────────
-
-/**
- * Compute per-population particle budget for the current solar wind conditions.
- *
- * At steady state N_i = rate_i × τ_i (Little's Law). Each population's share of
- * maxCount is proportional to this weight. Budgets always sum exactly to maxCount.
- *
- * When showProtons or showElectrons is false, those populations get zero budget;
- * the remaining species expand to fill the pool proportionally.
- *
- * @param {number} maxCount       Total particle pool size for this frame
- * @param {number} dst            Dst index in nT (drives outer injection rates)
- * @param {boolean} showElectrons Whether electron populations (B, C) are enabled
- * @param {boolean} showProtons   Whether proton populations (A, D) are enabled
- * @returns {{ budgetA, budgetB, budgetC, budgetD }}
- */
-function computeBudgets(maxCount, dst, showElectrons, showProtons) {
-  const mult = injectionRate(dst);
-  const wA = showProtons   ? crandInjectionRate()          * AVG_CRAND_LIFETIME          : 0;
-  const wB = showElectrons ? innerBeltElectronRate()       * AVG_INNER_ELECTRON_LIFETIME : 0;
-  const wC = showElectrons ? mult * BASE_INJECT_RATE       * AVG_OUTER_ELECTRON_LIFETIME : 0;
-  const wD = showProtons   ? mult * BASE_RING_CURRENT_RATE * AVG_RING_PROTON_LIFETIME    : 0;
-  const total = wA + wB + wC + wD;
-  if (total === 0) return { budgetA: 0, budgetB: 0, budgetC: 0, budgetD: 0 };
-  const budgetA = Math.floor(maxCount * wA / total);
-  const budgetB = Math.floor(maxCount * wB / total);
-  const budgetD = Math.floor(maxCount * wD / total);
-  // C gets the remainder so budgets sum exactly to maxCount (no rounding gap).
-  const budgetC = Math.max(0, maxCount - budgetA - budgetB - budgetD);
-  return { budgetA, budgetB, budgetC, budgetD };
-}
 
 // ─── Lifetime helpers ─────────────────────────────────────────────────────────
 

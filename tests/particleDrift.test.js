@@ -381,3 +381,56 @@ describe('beltConfinedLambdaMax', () => {
     expect(beltConfinedLambdaMax(3.0, 3.0, 3.0, LAT)).toBe(0);
   });
 });
+
+// ─── computeBudgets (Little's Law pool allocation) ───────────────────────────
+
+import { computeBudgets } from '../src/physics/particleDrift.js';
+
+describe('computeBudgets', () => {
+  const sum = (b) => b.budgetA + b.budgetB + b.budgetC + b.budgetD;
+
+  it.each([
+    [0], [-50], [-150],
+  ])('budgets sum exactly to maxCount at dst=%i (both species on)', (dst) => {
+    expect(sum(computeBudgets(800, dst, true, true))).toBe(800);
+    expect(sum(computeBudgets(2000, dst, true, true))).toBe(2000);
+  });
+
+  it('both species off → all budgets zero', () => {
+    expect(computeBudgets(800, 0, false, false))
+      .toEqual({ budgetA: 0, budgetB: 0, budgetC: 0, budgetD: 0 });
+  });
+
+  it('protons only → electron budgets zero, pool fully used by A + D', () => {
+    const b = computeBudgets(800, 0, false, true);
+    expect(b.budgetB).toBe(0);
+    expect(b.budgetC).toBe(0);
+    expect(b.budgetA + b.budgetD).toBe(800);
+  });
+
+  it('electrons only → proton budgets zero, pool fully used by B + C', () => {
+    const b = computeBudgets(800, 0, true, false);
+    expect(b.budgetA).toBe(0);
+    expect(b.budgetD).toBe(0);
+    expect(b.budgetB + b.budgetC).toBe(800);
+  });
+
+  it('storm shifts share toward storm-driven populations (C and D)', () => {
+    const quiet = computeBudgets(2000, 0, true, true);
+    const storm = computeBudgets(2000, -150, true, true);
+    expect(storm.budgetC / 2000).toBeGreaterThan(quiet.budgetC / 2000);
+    expect(storm.budgetD / 2000).toBeGreaterThan(quiet.budgetD / 2000);
+    expect(storm.budgetA).toBeLessThan(quiet.budgetA);
+  });
+
+  it('quiet-time shares match hand-computed Little\'s Law weights', () => {
+    // wA = crand(4) × 450 = 1800; wB = inner-e(2) × 120 = 240;
+    // wC = 1× × 20 × 35 = 700;    wD = 1× × 4 × 40 = 160;  total = 2900
+    const maxCount = 29000; // multiple of total → exact floor division
+    const b = computeBudgets(maxCount, 0, true, true);
+    expect(b.budgetA).toBe(18000); // 1800/2900
+    expect(b.budgetB).toBe(2400);  // 240/2900
+    expect(b.budgetD).toBe(1600);  // 160/2900
+    expect(b.budgetC).toBe(7000);  // remainder = 700/2900
+  });
+});

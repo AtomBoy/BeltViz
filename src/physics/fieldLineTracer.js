@@ -1,113 +1,111 @@
-import { computeB } from './igrf.js';
-import { computeTotalB } from './totalField.js';
-import {
-  cartesianToSpherical,
-  sphericalToCartesian,
-  bFieldToCartesian,
-} from './coordinates.js';
+import { computeFieldCartesian } from './totalField.js';
+import { cartesianToSpherical, sphericalToCartesian } from './coordinates.js';
 import { EARTH_RADIUS_KM } from '../utils/constants.js';
 
-/**
- * Compute the unit field direction at a Cartesian point (in km).
- * Returns [dx, dy, dz] unit vector along B, or null if inside Earth.
- *
- * @param {number} x - X in km
- * @param {number} y - Y in km
- * @param {number} z - Z in km
- * @param {object} coeffs - IGRF coefficients
- * @param {number} maxDegree - Maximum SH degree
- * @param {object} [solarWindParams] - Solar wind parameters (null = pure IGRF)
- */
-function fieldDirection(x, y, z, coeffs, maxDegree, solarWindParams) {
-  const [r, theta, phi] = cartesianToSpherical(x, y, z);
-  const [Br, Bt, Bp] = solarWindParams?.enabled
-    ? computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams)
-    : computeB(r, theta, phi, coeffs, maxDegree);
-  const [Bx, By, Bz] = bFieldToCartesian(Br, Bt, Bp, theta, phi);
-  const mag = Math.sqrt(Bx * Bx + By * By + Bz * Bz);
-  if (mag < 1e-10) return null;
-  return [Bx / mag, By / mag, Bz / mag];
-}
+// Scratch buffer for computeFieldCartesian — the tracer is single-threaded
+// (runs in the field line worker or the main thread, never both at once
+// within one module instance), so one module-level buffer is safe.
+const _field = new Float64Array(6);
 
 /**
- * Compute the colour metric for a field line point.
+ * Evaluate the field at a Cartesian point (in km) in a single IGRF + external
+ * computation, producing both the unit direction along B and the colour metric.
  *
- * When solar wind is active: returns the solar wind influence ratio
+ * Direction: unit vector along the total field. `valid` is false when
+ * |B_total| < 1e-10 nT (e.g. fully faded outside the magnetopause) — the
+ * point cannot be stepped from, matching the old fieldDirection null return.
+ *
+ * Colour metric:
+ * When solar wind is active: the solar wind influence ratio
  *   |B_external| / (|B_external| + |B_internal|)  ∈ [0, 1]
  * Near Earth the IGRF dominates → ratio ≈ 0 (blue).
  * Near the magnetopause / in the tail the T01 field becomes comparable
  * to IGRF → ratio → 1 (red), revealing dayside compression and nightside
  * stretching as a visible colour asymmetry.
  *
- * When solar wind is disabled: returns |B_total| (pure IGRF) in nT, which
+ * When solar wind is disabled: |B_total| (pure IGRF) in nT, which
  * spans 10–60 000 nT and colour-maps to a classic dipole strength gradient.
  * The auto-scale in fieldLines.js distinguishes the two modes by value range.
+ *
+ * The metric is computed even when `valid` is false (the field can fade to
+ * zero outside the magnetopause while the internal field is nonzero).
  */
-function computeColorMetric(x, y, z, coeffs, maxDegree, solarWindParams) {
+function evalPoint(x, y, z, coeffs, maxDegree, solarWindParams) {
   const [r, theta, phi] = cartesianToSpherical(x, y, z);
+  computeFieldCartesian(x, y, z, r, theta, phi, coeffs, maxDegree, solarWindParams, _field);
+  const Bx = _field[0];
+  const By = _field[1];
+  const Bz = _field[2];
+  const mag = Math.sqrt(Bx * Bx + By * By + Bz * Bz);
+  const valid = mag >= 1e-10;
+
+  let metric;
   if (solarWindParams?.enabled) {
-    const [Brt, Btt, Bpt] = computeTotalB(r, theta, phi, coeffs, maxDegree, solarWindParams);
-    const [Bri, Bti, Bpi] = computeB(r, theta, phi, coeffs, maxDegree);
-    const [Bxi, Byi, Bzi] = bFieldToCartesian(Bri, Bti, Bpi, theta, phi);
-    const [Bxt, Byt, Bzt] = bFieldToCartesian(Brt, Btt, Bpt, theta, phi);
+    const Bxi = _field[3];
+    const Byi = _field[4];
+    const Bzi = _field[5];
     const magInt = Math.sqrt(Bxi * Bxi + Byi * Byi + Bzi * Bzi);
     const magExt = Math.sqrt(
-      (Bxt - Bxi) * (Bxt - Bxi) +
-      (Byt - Byi) * (Byt - Byi) +
-      (Bzt - Bzi) * (Bzt - Bzi),
+      (Bx - Bxi) * (Bx - Bxi) +
+      (By - Byi) * (By - Byi) +
+      (Bz - Bzi) * (Bz - Bzi),
     );
-    // Ratio in [0, 1]: 0 = purely IGRF, 1 = purely external.
-    // Values are always in [0, 1] so the auto-scale threshold (2000 nT) in
-    // fieldLines.js will correctly identify this as "solar wind influence" mode.
-    return magInt > 0 ? magExt / (magExt + magInt) : 0;
+    metric = magInt > 0 ? magExt / (magExt + magInt) : 0;
+  } else {
+    metric = mag; // total == internal when solar wind is off
   }
-  const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, maxDegree);
-  const [Bx, By, Bz] = bFieldToCartesian(Br, Bt, Bp, theta, phi);
-  return Math.sqrt(Bx * Bx + By * By + Bz * Bz);
+
+  return {
+    valid,
+    ux: valid ? Bx / mag : 0,
+    uy: valid ? By / mag : 0,
+    uz: valid ? Bz / mag : 0,
+    metric,
+  };
 }
 
 /**
  * Single RK4 step for field line tracing.
+ * `k1` is the (already evaluated) field at (x, y, z) — the caller carries it
+ * over from the previous step's endpoint evaluation, so only k2–k4 are
+ * computed here.
  * Returns the new position [x, y, z] after stepping ds along B.
  */
-function rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams) {
-  const k1 = fieldDirection(x, y, z, coeffs, maxDegree, solarWindParams);
-  if (!k1) return null;
-
-  const k2 = fieldDirection(
-    x + 0.5 * ds * k1[0],
-    y + 0.5 * ds * k1[1],
-    z + 0.5 * ds * k1[2],
+function rk4Step(x, y, z, ds, k1, coeffs, maxDegree, solarWindParams) {
+  const k2 = evalPoint(
+    x + 0.5 * ds * k1.ux,
+    y + 0.5 * ds * k1.uy,
+    z + 0.5 * ds * k1.uz,
     coeffs,
     maxDegree,
     solarWindParams
   );
-  if (!k2) return null;
+  if (!k2.valid) return null;
 
-  const k3 = fieldDirection(
-    x + 0.5 * ds * k2[0],
-    y + 0.5 * ds * k2[1],
-    z + 0.5 * ds * k2[2],
+  const k3 = evalPoint(
+    x + 0.5 * ds * k2.ux,
+    y + 0.5 * ds * k2.uy,
+    z + 0.5 * ds * k2.uz,
     coeffs,
     maxDegree,
     solarWindParams
   );
-  if (!k3) return null;
+  if (!k3.valid) return null;
 
-  const k4 = fieldDirection(
-    x + ds * k3[0],
-    y + ds * k3[1],
-    z + ds * k3[2],
+  const k4 = evalPoint(
+    x + ds * k3.ux,
+    y + ds * k3.uy,
+    z + ds * k3.uz,
     coeffs,
     maxDegree,
     solarWindParams
   );
-  if (!k4) return null;
+  if (!k4.valid) return null;
 
   return [
-    x + (ds / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]),
-    y + (ds / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]),
-    z + (ds / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]),
+    x + (ds / 6) * (k1.ux + 2 * k2.ux + 2 * k3.ux + k4.ux),
+    y + (ds / 6) * (k1.uy + 2 * k2.uy + 2 * k3.uy + k4.uy),
+    z + (ds / 6) * (k1.uz + 2 * k2.uz + 2 * k3.uz + k4.uz),
   ];
 }
 
@@ -146,22 +144,28 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   const maxDegree = options.maxDegree;
   const solarWindParams = options.solarWindParams;
 
-  const seedBMag = computeColorMetric(startX, startY, startZ, coeffs, maxDegree, solarWindParams);
-  const points = [[startX, startY, startZ, seedBMag]];
+  // `cur` is the field evaluation at (x, y, z): it provides this point's
+  // colour metric AND serves as k1 of the next RK4 step, halving the number
+  // of field evaluations per step.
+  let cur = evalPoint(startX, startY, startZ, coeffs, maxDegree, solarWindParams);
+  const points = [[startX, startY, startZ, cur.metric]];
   let x = startX;
   let y = startY;
   let z = startZ;
 
   for (let i = 0; i < maxSteps; i++) {
+    if (!cur.valid) break;
+
     const r = Math.sqrt(x * x + y * y + z * z);
     const ds = adaptiveStepSize(r, baseDs);
-    const next = rk4Step(x, y, z, ds, coeffs, maxDegree, solarWindParams);
+    const next = rk4Step(x, y, z, ds, cur, coeffs, maxDegree, solarWindParams);
     if (!next) break;
 
     [x, y, z] = next;
     const rNext = Math.sqrt(x * x + y * y + z * z);
 
-    points.push([x, y, z, computeColorMetric(x, y, z, coeffs, maxDegree, solarWindParams)]);
+    cur = evalPoint(x, y, z, coeffs, maxDegree, solarWindParams);
+    points.push([x, y, z, cur.metric]);
 
     if (rNext < rMin) break; // Hit Earth's surface
     if (rNext > rMax) break; // Escaped to space (open field line)

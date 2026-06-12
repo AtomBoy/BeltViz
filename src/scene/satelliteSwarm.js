@@ -390,6 +390,58 @@ export function createSatelliteSwarm(scene, satellites) {
     scene.remove(group);
   }
 
+  // ─── Picking ──────────────────────────────────────────────────────────────────
+
+  const _pickVec = new THREE.Vector3();
+
+  /**
+   * Find the satellite nearest to a screen position, in screen space.
+   *
+   * THREE.Raycaster is unreliable for Points whose size is set in the vertex
+   * shader (gl_PointSize), so instead each visible satellite's current
+   * (interpolated) position is projected to screen pixels and compared
+   * against the click point. ~1,500 satellites per click — trivial cost.
+   *
+   * @param {number} clientX   - pointer X in CSS pixels
+   * @param {number} clientY   - pointer Y in CSS pixels
+   * @param {THREE.Camera} camera
+   * @param {number} viewportW - viewport width in CSS pixels
+   * @param {number} viewportH - viewport height in CSS pixels
+   * @param {number} [maxPx]   - hit radius in pixels
+   * @returns {number} global satellite index, or -1 if nothing within maxPx
+   */
+  function pickAtScreen(clientX, clientY, camera, viewportW, viewportH, maxPx = 14) {
+    let best = -1;
+    let bestDistSq = maxPx * maxPx;
+
+    for (let i = 0; i < satellites.length; i++) {
+      const info = globalToLocal[i];
+      if (!info) continue;
+      const slot = pointsMap[info.orbitClass];
+      if (!slot || !slot.points.visible) continue;
+
+      const li = info.localIndex;
+      const x = slot.posAttr.array[li * 3];
+      const y = slot.posAttr.array[li * 3 + 1];
+      const z = slot.posAttr.array[li * 3 + 2];
+      if (y < -1.5) continue; // un-propagated sentinel (placed at y = -2)
+
+      _pickVec.set(x, y, z).project(camera);
+      if (_pickVec.z > 1) continue; // behind the camera
+
+      const sx = (_pickVec.x * 0.5 + 0.5) * viewportW;
+      const sy = (0.5 - _pickVec.y * 0.5) * viewportH;
+      const dx = sx - clientX;
+      const dy = sy - clientY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   // ─── Public interface ─────────────────────────────────────────────────────────
 
   return {
@@ -401,8 +453,9 @@ export function createSatelliteSwarm(scene, satellites) {
     tickOrbitTrace,
     clearOrbitTrace,
     applyVisibility,
+    pickAtScreen,
     dispose,
-    /** Find the global satellite index closest to a screen click (for future picking). */
+    /** Currently selected global satellite index (-1 = none). */
     getSelectedGlobalIndex: () => selectedGlobalIndex,
   };
 }

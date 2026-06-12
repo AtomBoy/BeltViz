@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
-import { computeTotalB, computeTotalBMagnitude } from '../src/physics/totalField.js';
+import {
+  computeTotalB,
+  computeTotalBMagnitude,
+  computeFieldCartesian,
+} from '../src/physics/totalField.js';
 import { computeB, computeBMagnitude } from '../src/physics/igrf.js';
+import {
+  sphericalToCartesian,
+  bFieldToCartesian,
+  bCartesianToSpherical,
+} from '../src/physics/coordinates.js';
 
 const EARTH_RADIUS_KM = 6371.2;
 const Re = EARTH_RADIUS_KM;
@@ -107,5 +116,59 @@ describe('computeTotalBMagnitude', () => {
     const bIgrf = computeBMagnitude(r, theta, phi, coeffs, 8);
     const bTotal = computeTotalBMagnitude(r, theta, phi, coeffs, 8, null);
     expect(bTotal).toBeCloseTo(bIgrf, 5);
+  });
+});
+
+describe('computeFieldCartesian', () => {
+  // Sample points spanning dayside, nightside, off-equator
+  const samples = [
+    [2.0 * Re, Math.PI / 4, 1.0],
+    [3.5 * Re, Math.PI / 2, 0],
+    [5.0 * Re, Math.PI / 3, Math.PI],
+    [8.0 * Re, 1.2, 4.5],
+  ];
+
+  function evalAt(r, theta, phi, sw, maxDegree = 8) {
+    const [xKm, yKm, zKm] = sphericalToCartesian(r, theta, phi);
+    const out = new Float64Array(6);
+    computeFieldCartesian(xKm, yKm, zKm, r, theta, phi, coeffs, maxDegree, sw, out);
+    return out;
+  }
+
+  it.each([
+    ['quiet', quietParams],
+    ['storm', stormParams],
+    ['disabled', null],
+  ])('%s: total components match computeTotalB through bCartesianToSpherical', (_, sw) => {
+    for (const [r, theta, phi] of samples) {
+      const out = evalAt(r, theta, phi, sw);
+      const [Br, Bt, Bp] = bCartesianToSpherical(out[0], out[1], out[2], theta, phi);
+      const [BrRef, BtRef, BpRef] = computeTotalB(r, theta, phi, coeffs, 8, sw);
+      expect(Br).toBeCloseTo(BrRef, 8);
+      expect(Bt).toBeCloseTo(BtRef, 8);
+      expect(Bp).toBeCloseTo(BpRef, 8);
+    }
+  });
+
+  it.each([
+    ['quiet', quietParams],
+    ['storm', stormParams],
+    ['disabled', null],
+  ])('%s: internal components match computeB + bFieldToCartesian (unfaded)', (_, sw) => {
+    for (const [r, theta, phi] of samples) {
+      const out = evalAt(r, theta, phi, sw);
+      const [Br, Bt, Bp] = computeB(r, theta, phi, coeffs, 8);
+      const [BxRef, ByRef, BzRef] = bFieldToCartesian(Br, Bt, Bp, theta, phi);
+      expect(out[3]).toBeCloseTo(BxRef, 8);
+      expect(out[4]).toBeCloseTo(ByRef, 8);
+      expect(out[5]).toBeCloseTo(BzRef, 8);
+    }
+  });
+
+  it('disabled: total equals internal exactly', () => {
+    const out = evalAt(2.5 * Re, 1.1, 2.2, null);
+    expect(out[0]).toBe(out[3]);
+    expect(out[1]).toBe(out[4]);
+    expect(out[2]).toBe(out[5]);
   });
 });

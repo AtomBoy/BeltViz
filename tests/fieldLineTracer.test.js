@@ -274,3 +274,58 @@ describe('traceFieldLine - solar wind extent', () => {
     expect(maxRadius(quietPoints)).toBeGreaterThan(maxRadius(severePoints));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Golden regression traces — exact values pinned against the IGRF-14 2025
+// epoch. These guard performance refactors of the tracer / field evaluation:
+// positions must match within 1 km and color metrics (the 4th component of
+// each point) within 1e-6. The checksum covers every point's metric, not
+// just the three sampled ones.
+// ---------------------------------------------------------------------------
+
+describe('traceFieldLine - golden traces (regression)', () => {
+  function expectPoint(actual, expected, posTolKm, metricTol, metricRelative) {
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(actual[i] - expected[i])).toBeLessThan(posTolKm);
+    }
+    const mTol = metricRelative ? metricTol * Math.abs(expected[3]) : metricTol;
+    expect(Math.abs(actual[3] - expected[3])).toBeLessThan(mTol);
+  }
+
+  function checksum(points) {
+    return points.reduce((s, p) => s + p[3], 0);
+  }
+
+  it('55°N dipole, no solar wind (metric = |B| in nT)', () => {
+    const { x, y, z } = seedAtLatLon(55, 0);
+    const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 1 });
+    expect(points.length).toBe(409);
+    expectPoint(points[0], [3036.75456409948, -5196.66898459877, 1585.27884476375, 56298.6894129275], 1, 1e-6, true);
+    expectPoint(points[Math.floor(points.length / 2)], [20553.0616352156, -244.526928107242, 4921.54264336623, 814.460829888147], 1, 1e-6, true);
+    expectPoint(points[points.length - 1], [3575.55606987609, 5158.03374084769, -8.58195717877052, 54846.6820987361], 1, 1e-6, true);
+    const expected = 3293662.20392418;
+    expect(Math.abs(checksum(points) - expected)).toBeLessThan(1e-6 * expected);
+  });
+
+  it('65°N nightside, severe storm (metric = external influence ratio)', () => {
+    const { x, y, z } = seedAtLatLon(65, 180);
+    const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 1, solarWindParams: SW_SEVERE });
+    expect(points.length).toBe(1224);
+    expectPoint(points[0], [-2989.45803008786, -5206.49234195272, 1881.97256843569, 0.00302084966857936], 1, 1e-6, false);
+    expectPoint(points[Math.floor(points.length / 2)], [-109474.511243403, 1678.89953468688, 23258.9235850662, 0.680524399484968], 1, 1e-6, false);
+    expectPoint(points[points.length - 1], [-2629.22576586608, 5697.33151322109, -8.14014064982745, 0.00284219093467014], 1, 1e-6, false);
+    const expected = 570.631354682121;
+    expect(Math.abs(checksum(points) - expected)).toBeLessThan(1e-6 * expected);
+  });
+
+  it('40°N lon 90, full IGRF degree 13, quiet solar wind', () => {
+    const { x, y, z } = seedAtLatLon(40, 90);
+    const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 13, solarWindParams: SW_QUIET });
+    expect(points.length).toBe(129);
+    expectPoint(points[0], [-325.576906217635, -2726.75031205678, 5634.90683335643, 0.000201276616393105], 1, 1e-6, false);
+    expectPoint(points[Math.floor(points.length / 2)], [-107.322371069538, 1234.77115248521, 9711.12211075199, 0.00120691776685613], 1, 1e-6, false);
+    expectPoint(points[points.length - 1], [-1.06122836517151, 4074.77409034144, 4782.76487021162, 0.000184289532374676], 1, 1e-6, false);
+    const expected = 0.0928264466311976;
+    expect(Math.abs(checksum(points) - expected)).toBeLessThan(1e-6 * expected);
+  });
+});

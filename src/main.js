@@ -4,6 +4,7 @@ import { solarPosition, lunarPosition } from './utils/astronomy.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
 import { buildFieldLineGroup, createFieldLineMesh, TUBE_SEGMENTS } from './scene/fieldLines.js';
+import { unpackTracedLines } from './physics/fieldLinePacking.js';
 // fieldLineTracer — generateSeedPoints and traceFieldLine are now called
 // inside src/physics/fieldLineWorker.js (off the main thread).
 import { latitudeToColor } from './utils/colors.js';
@@ -43,70 +44,12 @@ import {
   setSatellitePanelSelection,
 } from './ui/satellitePanel.js';
 import { findSatelliteIndex, periodFromLine2 } from './ui/satelliteSearchState.js';
+import { DEFAULT_PARAMS } from './utils/defaultParams.js';
 
 // --- Params (mutable, controlled by GUI) ---
-const params = {
-  maxDegree: 13, // start with highest IGRF-14 degree.
-  numLatitudes: 4,
-  numLongitudes: 8,
-  tubeRadius: 0.008,
-  showFieldLines: true,
-  autoRotate: false,
-  // Isosurface params
-  showIsosurfaces: false,
-  isoMode: 'lShell', // 'lShell' or 'fieldStrength'
-  isoResolution: 64,
-  isoOpacity: 0.2,
-  isoLevels: {},
-  // Radiation belt params
-  showInnerBelt: false,
-  showOuterBelt: false,
-  beltOpacity: 0.85,
-  // Clipping params
-  clipEquatorial: false,
-  clipMeridional: false,
-  clipMeridionalAngle: 0,
-  // Satellite probe params
-  // Solar wind params
-  solarWindEnabled: true,
-  solarWindSpeed: 400,
-  solarWindDensity: 5,
-  imfBy: 0,             // IMF By (nT GSM) — dawn-dusk field component, T01 input
-  imfBz: 0,
-  dst: 0,
-  g1: 0,                // T01 storm-history index G1 (Qin-Denton pre-computed)
-  g2: 0,                // T01 storm-history index G2 (Qin-Denton pre-computed)
-  sunLongitude: 0,      // internal — computed from datetime, not a user slider
-  sunDeclination: 0,    // internal — computed from datetime
-  showMagnetopause: false,
-  showBowShock: false,
-  colorByB: false,
-  // Date & Time params (internal — driven by timeline, not lil-gui)
-  datetimeString: '2025-11-06T00:00',
-  // Particle system
-  particles: {
-    enabled:       false,  // off by default — user opts in
-    showElectrons: true,   // show electron population (blue, eastward drift)
-    showProtons:   true,   // show proton population (orange, westward drift)
-    count:         800,    // max simultaneous particles
-    energyMeV:     1.0,   // representative electron energy (MeV)
-  },
-  // Aurora oval
-  aurora: {
-    enabled: false,
-    opacity: 1.0,
-  },
-  // Satellite swarm
-  satellites: {
-    enabled:     false,
-    showLeo:     true,
-    showMeo:     true,
-    showGeo:     true,
-    showHeo:     true,
-    showOther:   false,
-    notableOnly: true,
-  },
-};
+// Defaults live in src/utils/defaultParams.js so tests can verify the URL
+// persistence DEFAULTS table stays in sync with them.
+const params = structuredClone(DEFAULT_PARAMS);
 
 // Apply URL hash overrides to params before GUI initialises so sliders start
 // at the correct values. isoLevels must be applied later (after initIsoLevels).
@@ -208,6 +151,28 @@ if (_urlCamera) {
 }
 controls.addEventListener('change', () => scheduleUrlWrite(params, camera));
 
+// --- Satellite click-picking ---
+// Click (not drag) on a satellite dot selects it, mirroring panel selection.
+// Distinguished from OrbitControls drags by pointer movement < 5 px.
+let _pointerDownPos = null;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  _pointerDownPos = { x: e.clientX, y: e.clientY };
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const down = _pointerDownPos;
+  _pointerDownPos = null;
+  if (!down || !satelliteSwarm || !params.satellites.enabled) return;
+  if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return; // drag → OrbitControls
+
+  const idx = satelliteSwarm.pickAtScreen(
+    e.clientX, e.clientY, camera, window.innerWidth, window.innerHeight
+  );
+  if (idx >= 0) {
+    setSatellitePanelSelection(idx); // update panel UI without re-firing callbacks
+    onSatelliteSelected(idx);        // highlight, orbit trace, readout, URL
+  }
+});
+
 // --- Clipping planes ---
 const clipping = createClippingPlanes();
 
@@ -278,6 +243,9 @@ function maybeUpdateIgrf(date) {
 
 async function loadCoefficients() {
   const response = await fetch('./data/igrf/igrf14-all.json');
+  if (!response.ok) {
+    throw new Error(`IGRF coefficients fetch failed: ${response.status} ${response.statusText}`);
+  }
   allIgrfData = await response.json();
   const initialYear = new Date(params.datetimeString).getUTCFullYear();
   currentIgrfYear = initialYear;
@@ -305,7 +273,7 @@ function getOrCreateFieldLineWorker() {
  * Stale responses (buildId behind current counter) are silently discarded.
  */
 function onFieldLineWorkerMessage(e) {
-  const { type, buildId, tracedLines } = e.data;
+  const { type, buildId } = e.data;
   if (buildId !== fieldLineBuildId) return; // newer rebuild was requested — discard
 
   if (type === 'progress') {
@@ -317,8 +285,10 @@ function onFieldLineWorkerMessage(e) {
   }
   if (type !== 'fieldLinesReady') return;
 
+  const tracedLines = unpackTracedLines(e.data);
+
   // Pre-filter: skip lines that would produce a degenerate mesh (< 2 points).
-  const renderableLines = tracedLines.filter((l) => l.points.length >= 2);
+  const renderableLines = tracedLines.filter((l) => l.count >= 2);
 
   const sameTopology =
     fieldLineGroup !== null &&
@@ -1250,7 +1220,7 @@ function rebuildMagnetopause() {
   import('./scene/magnetopauseMesh.js').then(({ buildMagnetopauseMesh }) => {
     magnetopauseGroup = buildMagnetopauseMesh(getSolarWindParams());
     if (magnetopauseGroup) scene.add(magnetopauseGroup);
-  });
+  }).catch((err) => console.warn('[Magnetopause] failed to load module:', err));
 }
 
 function onMagnetopauseChange() {
@@ -1276,7 +1246,7 @@ function rebuildBowShock() {
   import('./scene/bowShockMesh.js').then(({ buildBowShockMesh }) => {
     bowShockGroup = buildBowShockMesh(getSolarWindParams());
     if (bowShockGroup) scene.add(bowShockGroup);
-  });
+  }).catch((err) => console.warn('[BowShock] failed to load module:', err));
 }
 
 function onBowShockChange() {
@@ -1293,6 +1263,24 @@ function onColorByBChange() {
 // --- UI ---
 createInfoOverlay();
 let timeline; // declared before GUI so lightUpdateDatetime can reference it
+
+/**
+ * Download the current view as a PNG named with the simulation datetime.
+ * The renderer does not use preserveDrawingBuffer (a permanent perf cost),
+ * so render a fresh frame in the same task before reading the canvas.
+ */
+function captureScreenshot() {
+  renderer.render(scene, camera);
+  renderer.domElement.toBlob((blob) => {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const stamp = params.datetimeString.replace(/:/g, '-');
+    a.download = `beltviz-${stamp}.png`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, 'image/png');
+}
 const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onRebuild: () => { rebuildFieldLines(1000); scheduleUrlWrite(params, camera); },
   onVisualChange: applyVisualChanges,
@@ -1307,6 +1295,7 @@ const { gui, refreshSolarWindControls } = createControlPanel(params, {
   onMagnetopauseChange,
   onBowShockChange,
   onColorByBChange,
+  onScreenshot: captureScreenshot,
   // Particle / aurora changes are handled by the per-frame update() calls;
   // no expensive rebuilds are needed when the user changes these params.
   onParticleChange: () => scheduleUrlWrite(params, camera),
@@ -1336,6 +1325,35 @@ timeline = createTimeline({
 
 // Repaint the timeline color bar whenever a new monthly data file is loaded.
 setOnMonthLoaded(() => timeline.refreshColors());
+
+// --- Keyboard shortcuts ---
+// Space = play/pause, ←/→ = ±1 day, S = screenshot.
+// Ignored while typing in any input (satellite search, lil-gui fields,
+// timeline speed select). Escape is owned by the satellite panel.
+window.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return; // don't shadow browser shortcuts
+
+  switch (e.key) {
+    case ' ':
+      e.preventDefault(); // a focused button would otherwise also activate
+      timeline?.togglePlay();
+      break;
+    case 'ArrowLeft':
+      timeline?.stepDays(-1);
+      break;
+    case 'ArrowRight':
+      timeline?.stepDays(1);
+      break;
+    case 's':
+    case 'S':
+      captureScreenshot();
+      break;
+  }
+});
 
 // --- Resize ---
 window.addEventListener('resize', () => {
@@ -1393,10 +1411,26 @@ function animate(now = performance.now()) {
 async function init() {
   // Load date first so the default date (2025-11-01) has data immediately.
   // Neighboring months load in the background as the user navigates.
-  await Promise.all([
-    loadCoefficients(),
-    loadMonth(2025, 11),
-  ]);
+  // Solar wind data is non-fatal (the app falls back to manual sliders);
+  // IGRF coefficients are required — without them nothing can render.
+  try {
+    await Promise.all([
+      loadCoefficients(),
+      loadMonth(2025, 11).catch((err) =>
+        console.warn('[SolarWind] initial month load failed:', err)
+      ),
+    ]);
+  } catch (err) {
+    console.error('[IGRF] failed to load coefficients:', err);
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.textContent =
+        'Failed to load magnetic field data. Check your connection and reload the page.';
+      loading.style.color = '#ff6666';
+      loading.style.display = '';
+    }
+    return; // no coefficients — nothing else can run
+  }
 
   // Load satellite catalog (non-blocking — swarm only shown when user enables it)
   fetch('./data/satellites.json')

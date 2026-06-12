@@ -87,4 +87,28 @@ describe('computeLegendre', () => {
     expect(isNaN(P2[1][0])).toBe(false);
     expect(isFinite(dP2[1][0])).toBe(true);
   });
+
+  // The returned arrays are shared scratch buffers — these tests pin the
+  // reuse contract: values are correct when re-requested after intervening
+  // calls with different nmax/theta.
+  it('recomputing after intervening calls reproduces identical values', () => {
+    const theta = 1.0;
+    const { P } = computeLegendre(13, theta);
+    const saved13_7 = P[13][7];
+    const saved5_3 = P[5][3];
+
+    computeLegendre(2, 2.2); // intervening call, smaller nmax, different theta
+
+    const { P: Pagain } = computeLegendre(13, theta);
+    expect(Math.abs(Pagain[13][7] - saved13_7)).toBeLessThan(1e-14);
+    expect(Math.abs(Pagain[5][3] - saved5_3)).toBeLessThan(1e-14);
+  });
+
+  it('varying-nmax call sequence still matches analytic P[2][0]', () => {
+    const theta = 0.8;
+    const x = Math.cos(theta);
+    computeLegendre(13, 1.7); // pollute scratch with unrelated values
+    const { P } = computeLegendre(2, theta);
+    expectClose(P[2][0], (3 * x * x - 1) / 2, 1e-6);
+  });
 });

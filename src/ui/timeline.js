@@ -68,6 +68,12 @@ function injectStyles() {
       padding: 0 12px; flex-shrink: 0; width: 230px;
     }
     #tl-clock { text-align: center; min-width: 84px; }
+    #tl-kp-badge {
+      padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: bold; color: #fff;
+      background: rgba(40, 150, 80, 0.7);
+      white-space: nowrap; flex-shrink: 0;
+    }
     #tl-date  { font-size: 11px; color: #88ccff; line-height: 1.3; }
     #tl-time  {
       font-size: 13px; font-weight: bold;
@@ -195,6 +201,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
         <div id="tl-time"></div>
       </div>
       <button class="tl-btn" id="tl-next" title="Next week">⏭</button>
+      <span id="tl-kp-badge" title="Kp index: green &lt; 3 (quiet), amber 3–5 (moderate storm), red &gt; 5 (severe storm)">Kp –</span>
       <button class="tl-btn" id="tl-play" title="Play / Pause">▶</button>
       <select class="tl-select" id="tl-speed" title="Playback speed">
         <option value="1">1×</option>
@@ -243,6 +250,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   const elPlayBtn = container.querySelector('#tl-play');
   const bar       = container.querySelector('#tl-bar');
   const elKpVal   = container.querySelector('#tl-kp-val');
+  const elKpBadge = container.querySelector('#tl-kp-badge');
   const elKpFill  = container.querySelector('#tl-kp-fill');
   const elKpMk    = container.querySelector('#tl-kp-mk');
   const elDstVal  = container.querySelector('#tl-dst-val');
@@ -370,14 +378,32 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   });
 
   // --- Button handlers ---
-  container.querySelector('#tl-play').addEventListener('click', () => {
+  // Shared by the play button and the public togglePlay() API (spacebar).
+  function togglePlayInternal() {
     playing = !playing;
     if (!playing) {
       lastRebuildMs = 0;
       onPause();
     }
     updateDisplay();
-  });
+  }
+
+  // Step the current time by whole days (keyboard ←/→). Unlike tl-prev/tl-next
+  // (which jump a full 7-day window), this moves one day and only re-windows
+  // when the playhead would leave the visible range.
+  function stepDaysInternal(n) {
+    currentTime = new Date(currentTime.getTime() + n * 86400_000);
+    const viewEnd = viewDate.getTime() + WINDOW_MS;
+    if (currentTime.getTime() < viewDate.getTime() || currentTime.getTime() >= viewEnd) {
+      viewDate = utcStartOfDay(currentTime);
+      buildTicks();
+    }
+    updateDisplay();
+    onTimeChange(currentTime.toISOString().slice(0, 16));
+    onPause();
+  }
+
+  container.querySelector('#tl-play').addEventListener('click', togglePlayInternal);
 
   container.querySelector('#tl-prev').addEventListener('click', () => {
     viewDate    = new Date(viewDate.getTime()    - WINDOW_MS);
@@ -501,6 +527,13 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
         elKpFill.style.width      = kpPct + '%';
         elKpFill.style.background = kpColor;
         elKpMk.style.left         = kpPct + '%';
+        if (elKpBadge) {
+          elKpBadge.textContent = 'Kp ' + kpSafe.toFixed(1);
+          elKpBadge.style.background =
+            kpSafe < 3 ? 'rgba(40, 150, 80, 0.7)'
+            : kpSafe <= 5 ? 'rgba(200, 120, 30, 0.7)'
+            : 'rgba(180, 40, 40, 0.7)';
+        }
       }
 
       // ── Dst gauge (storm intensity, 0=quiet → 1 at Dst=−200) ─────────────
@@ -526,6 +559,16 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
         elBzFill.style.background = bzColor;
         elBzMk.style.left         = (southFrac * 100) + '%';
       }
+    },
+
+    /** Toggle play/pause (same as clicking the ▶ button). */
+    togglePlay() {
+      togglePlayInternal();
+    },
+
+    /** Step the playhead by n whole days (negative = back). Pauses playback. */
+    stepDays(n) {
+      stepDaysInternal(n);
     },
 
     destroy() {

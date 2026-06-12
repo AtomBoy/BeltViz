@@ -57,6 +57,7 @@ export function createControlPanel(params, callbacks) {
     onMagnetopauseChange,
     onBowShockChange   = () => {},
     onColorByBChange   = () => {},
+    onScreenshot       = () => {},
     // Particle and aurora changes are handled by per-frame update() calls in main.js.
     // These callbacks are accepted but currently unused (no-ops).
     // eslint-disable-next-line no-unused-vars
@@ -267,6 +268,9 @@ export function createControlPanel(params, callbacks) {
     .name('Meridional Angle')
     .onChange(onClipChange);
   fClip.close();
+
+  // ── Screenshot ───────────────────────────────────────────────────────────────
+  gui.add({ screenshot: onScreenshot }, 'screenshot').name('Screenshot (S)');
 
   /**
    * Refresh only the four solar wind value sliders.

@@ -104,3 +104,29 @@ describe('computeB - full IGRF (maxDegree=13)', () => {
     expect(Math.abs(full - dipole) / dipole).toBeLessThan(0.5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Golden snapshots — exact values pinned against the IGRF-14 2025 epoch.
+// These guard performance refactors (Legendre scratch buffers, trig
+// recurrence): values must stay within 1e-6 relative. Degree-13 coverage
+// also exercises the full Legendre recursion at high (n, m), which the
+// analytic tests in legendre.test.js only verify up to n=2.
+// ---------------------------------------------------------------------------
+
+describe('computeB - golden snapshots (regression)', () => {
+  function expectRel(actual, expected, rel = 1e-6) {
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(actual[i] - expected[i])).toBeLessThan(rel * Math.abs(expected[i]));
+    }
+  }
+
+  it('matches pinned values at 2 Re, full degree 13', () => {
+    const B = computeB(2 * EARTH_R, 1.0, 2.0, coeffs, 13);
+    expectRel(B, [-3742.397970254857, -3730.7439233182304, -62.000963869256225]);
+  });
+
+  it('matches pinned values at 1.2 Re, degree 8', () => {
+    const B = computeB(1.2 * EARTH_R, 0.3, 5.5, coeffs, 8);
+    expectRel(B, [-32550.733844071317, -4469.960321666554, -1646.5160240557257]);
+  });
+});

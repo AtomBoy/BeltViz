@@ -15,14 +15,16 @@
  *                  polarCapLatitudes, coeffs, maxDegree, solarWindParams }
  *
  * Worker → Main  { type: 'progress', buildId, percent }
- * Worker → Main  { type: 'fieldLinesReady', buildId,
- *                  tracedLines: [{ points: [[x,y,z], …], lat, lon }, …] }
+ * Worker → Main  { type: 'fieldLinesReady', buildId, positions, offsets, meta }
+ *                packed via fieldLinePacking.js; positions/offsets buffers
+ *                are transferred (zero-copy), not cloned.
  *
  * The main thread discards any response whose buildId is behind the current
  * fieldLineBuildId (stale-build guard, same semantics as the old async pattern).
  */
 
 import { traceFieldLine, generateSeedPoints } from './fieldLineTracer.js';
+import { packTracedLines } from './fieldLinePacking.js';
 
 self.onmessage = function (e) {
   const {
@@ -65,5 +67,9 @@ self.onmessage = function (e) {
     }
   }
 
-  self.postMessage({ type: 'fieldLinesReady', buildId, tracedLines });
+  const packed = packTracedLines(tracedLines);
+  self.postMessage(
+    { type: 'fieldLinesReady', buildId, ...packed },
+    [packed.positions.buffer, packed.offsets.buffer]
+  );
 };

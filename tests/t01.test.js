@@ -201,3 +201,46 @@ describe('t01 - field magnitude plausibility', () => {
     expect(bx).toBeLessThan(0);
   });
 });
+
+// ── Golden snapshots (regression) ─────────────────────────────────────────
+// Exact values pinned for representative points. The behavioral tests above
+// are symmetry/sign checks that a symmetric value corruption would pass;
+// these literals guard internal refactors (e.g. scratch-buffer reuse in
+// fialcos). Tolerance: 1e-9 relative with a 1e-8 nT absolute floor for
+// near-zero components.
+describe('t01 - golden snapshots (regression)', () => {
+  // Storm parmod with all six drivers nonzero so By/G1/G2 terms are exercised
+  const STORM_FULL = [8, -150, 5, -15, 6, 10, 0, 0, 0, 0];
+
+  function expectVec(actual, expected) {
+    for (let i = 0; i < 3; i++) {
+      const tol = Math.max(1e-9 * Math.abs(expected[i]), 1e-8);
+      expect(Math.abs(actual[i] - expected[i])).toBeLessThan(tol);
+    }
+  }
+
+  it('quiet, dayside (8, 0, 0)', () => {
+    expectVec(t01(QUIET, 0, 8, 0, 0), [7.745114431465993e-11, 0, 26.784500311029646]);
+  });
+  it('quiet, tail (-15, 0, 3)', () => {
+    expectVec(t01(QUIET, 0, -15, 0, 3), [23.40061845764165, -0.00021887101949287805, -2.650458932509455]);
+  });
+  it('quiet, high-lat dawn (2, -5, 6)', () => {
+    expectVec(t01(QUIET, 0, 2, -5, 6), [19.249149257880227, 4.920042619638554, 2.099901640028503]);
+  });
+  it('quiet, tilted ps=0.3 (5, 2, 4)', () => {
+    expectVec(t01(QUIET, 0.3, 5, 2, 4), [20.65178257685639, -2.2963178186597077, 3.0812252071682336]);
+  });
+  it('storm, dayside (8, 0, 0)', () => {
+    expectVec(t01(STORM_FULL, 0, 8, 0, 0), [-2.0577911672044998e-10, 3.104887203695805, 68.19327550797843]);
+  });
+  it('storm, tail (-15, 0, 3)', () => {
+    expectVec(t01(STORM_FULL, 0, -15, 0, 3), [67.1943512021605, 2.9759428351187287, 1.163934061495432]);
+  });
+  it('storm, high-lat dawn (2, -5, 6)', () => {
+    expectVec(t01(STORM_FULL, 0, 2, -5, 6), [72.62328195222734, 30.15993681597603, -26.686921632253217]);
+  });
+  it('storm, tilted ps=0.3 (5, 2, 4)', () => {
+    expectVec(t01(STORM_FULL, 0.3, 5, 2, 4), [57.82622845461472, -7.938154968229046, -36.84703997876349]);
+  });
+});

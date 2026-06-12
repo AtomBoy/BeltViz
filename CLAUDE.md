@@ -210,10 +210,7 @@ When adding a new physics model, algorithm, or data source:
 
 ## TODOs based on user feedback
 
-### Immediate issues
-
-- [ ] For the particle simulation, electrons and protons share the same 'Max Particles' count, causing protons to dominate because they have longer lifetimes. Allocate (split) the max particle count per type using their steady-state ratio (Little's Law: N = rate × τ). The goal is a realistic proton/electron ratio that stays near the 'Max Particles' limit across varying solar wind conditions.
-
 ### Longer term
 
 - [ ] Show satellite CAD model on satellite selection. There is an example CAD file in `public/models/`. When a satellite is selected, show the model in the upper-left corner and draw a line to its location in orbit in the manner of a 'detail inset' figure.
+- [ ] Particle budgets (Little's Law split, `computeBudgets` in `src/physics/particleDrift.js`) are implemented and tested. Remaining nuance: when Dst shifts budgets between populations, an over-budget population is not culled — it decays via lifetime only, so the total alive count can briefly exceed 'Max Particles' (bounded; decays within τ ≤ 450 visual-seconds). Optional refinement: probabilistic early retirement proportional to overshoot.

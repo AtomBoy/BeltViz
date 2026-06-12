@@ -4,7 +4,33 @@
  *
  * Uses the standard stable recursion relations.
  * Returns { P, dP } where P[n][m] and dP[n][m] are 2D arrays.
+ *
+ * PERFORMANCE NOTE: the returned arrays are module-level scratch buffers
+ * reused on every call (this sits in the field line tracer hot path — fresh
+ * allocation per call dominated GC pressure). Consume the values before
+ * calling computeLegendre again; do not hold a reference across calls.
+ * Only rows 0..nmax are written for a given call — higher rows may hold
+ * stale data from a previous call with a larger nmax.
  */
+let _P = null;
+let _dP = null;
+let _allocatedN = -1;
+const _result = { P: null, dP: null };
+
+function ensureScratch(nmax) {
+  if (nmax <= _allocatedN) return;
+  const size = Math.max(nmax, 13); // IGRF-14 max degree; avoids regrowth churn
+  _P = new Array(size + 1);
+  _dP = new Array(size + 1);
+  for (let n = 0; n <= size; n++) {
+    _P[n] = new Float64Array(n + 1);
+    _dP[n] = new Float64Array(n + 1);
+  }
+  _allocatedN = size;
+  _result.P = _P;
+  _result.dP = _dP;
+}
+
 export function computeLegendre(nmax, theta) {
   // Clamp theta away from poles to avoid division by zero
   const EPS = 1e-10;
@@ -13,19 +39,15 @@ export function computeLegendre(nmax, theta) {
   const cosT = Math.cos(t);
   const sinT = Math.sin(t);
 
-  // Allocate arrays
-  const P = new Array(nmax + 1);
-  const dP = new Array(nmax + 1);
-  for (let n = 0; n <= nmax; n++) {
-    P[n] = new Float64Array(n + 1);
-    dP[n] = new Float64Array(n + 1);
-  }
+  ensureScratch(nmax);
+  const P = _P;
+  const dP = _dP;
 
   // Seed values
   P[0][0] = 1.0;
   dP[0][0] = 0.0;
 
-  if (nmax === 0) return { P, dP };
+  if (nmax === 0) return _result;
 
   P[1][0] = cosT;
   P[1][1] = sinT;
@@ -59,5 +81,5 @@ export function computeLegendre(nmax, theta) {
     }
   }
 
-  return { P, dP };
+  return _result;
 }

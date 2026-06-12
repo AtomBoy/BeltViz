@@ -243,3 +243,63 @@ export function lossLifetime(L) {
   if (L < 4) return  600;  // outer belt main body
   return              300;  // outer belt fringe: faster wave scattering
 }
+
+// ─── Particle budget allocation (Little's Law) ────────────────────────────────
+
+// Baseline outer belt electrons per real second at quiet conditions (Dst ≥ −20 nT).
+export const BASE_INJECT_RATE = 20;
+
+// Ring current proton base rate: ~20% of outer electron rate.
+// Ring current protons coexist with outer electrons, slightly weighted lower.
+export const BASE_RING_CURRENT_RATE = 4;
+
+// Representative mean lifetimes for budget computation (Little's Law: N_steady = rate × τ).
+// These are averages across each population's L-range, used only for budget allocation.
+const AVG_CRAND_LIFETIME          = 450; // innerBeltLifetime midpoint at L ≈ 1.6
+const AVG_INNER_ELECTRON_LIFETIME = 120; // equals INNER_ELECTRON_LIFETIME in particleSystem.js
+const AVG_OUTER_ELECTRON_LIFETIME =  35; // mix: 45s (L < 4) + 25s (L ≥ 4)
+const AVG_RING_PROTON_LIFETIME    =  40; // skewed lower-L vs outer electrons → slightly longer
+
+/**
+ * Compute per-population particle budget for the current solar wind conditions.
+ *
+ * At steady state N_i = rate_i × τ_i (Little's Law). Each population's share of
+ * maxCount is proportional to this weight. Budgets always sum exactly to maxCount.
+ *
+ * Populations: A = CRAND protons, B = inner belt electrons,
+ * C = outer belt electrons, D = ring current protons.
+ *
+ * When showProtons or showElectrons is false, those populations get zero budget;
+ * the remaining species expand to fill the pool proportionally.
+ *
+ * @param {number} maxCount       Total particle pool size for this frame
+ * @param {number} dst            Dst index in nT (drives outer injection rates)
+ * @param {boolean} showElectrons Whether electron populations (B, C) are enabled
+ * @param {boolean} showProtons   Whether proton populations (A, D) are enabled
+ * @returns {{ budgetA, budgetB, budgetC, budgetD }}
+ */
+export function computeBudgets(maxCount, dst, showElectrons, showProtons) {
+  const mult = injectionRate(dst);
+  const wA = showProtons   ? crandInjectionRate()          * AVG_CRAND_LIFETIME          : 0;
+  const wB = showElectrons ? innerBeltElectronRate()       * AVG_INNER_ELECTRON_LIFETIME : 0;
+  const wC = showElectrons ? mult * BASE_INJECT_RATE       * AVG_OUTER_ELECTRON_LIFETIME : 0;
+  const wD = showProtons   ? mult * BASE_RING_CURRENT_RATE * AVG_RING_PROTON_LIFETIME    : 0;
+  const total = wA + wB + wC + wD;
+  if (total === 0) return { budgetA: 0, budgetB: 0, budgetC: 0, budgetD: 0 };
+  let budgetA = Math.floor(maxCount * wA / total);
+  let budgetB = Math.floor(maxCount * wB / total);
+  let budgetD = Math.floor(maxCount * wD / total);
+  // The floor-division remainder goes to C so budgets sum exactly to maxCount —
+  // unless electrons are disabled (wC = 0), in which case it must go to an
+  // enabled population (otherwise a few stray electrons could be injected).
+  let budgetC = 0;
+  if (wC > 0) {
+    budgetC = Math.max(0, maxCount - budgetA - budgetB - budgetD);
+  } else {
+    const rem = maxCount - budgetA - budgetB - budgetD;
+    if (wA >= wB && wA >= wD) budgetA += rem;
+    else if (wB >= wD) budgetB += rem;
+    else budgetD += rem;
+  }
+  return { budgetA, budgetB, budgetC, budgetD };
+}

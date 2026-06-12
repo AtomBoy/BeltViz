@@ -824,10 +824,12 @@ function theta_s(a, r, theta) {
 // ---------------------------------------------------------------------------
 
 function fialcos(r, theta, phi, n, theta0, dt) {
-  const btn  = new Array(10).fill(0.0);
-  const bpn  = new Array(10).fill(0.0);
-  const ccos = new Array(10).fill(0.0);
-  const ssin = new Array(10).fill(0.0);
+  // The original Fortran fills btn/bpn/ccos/ssin arrays, but each element is
+  // written and read within the same loop iteration and only the final
+  // (mi = n) btn/bpn values are returned — scalars suffice (hot path: called
+  // from birk_tot on every external-field evaluation).
+  let btnLast = 0.0;
+  let bpnLast = 0.0;
 
   const sinte = Math.sin(theta);
   const ro    = r * sinte;
@@ -853,10 +855,10 @@ function fialcos(r, theta, phi, n, theta0, dt) {
 
   for (let mi = 1; mi <= n; mi++) {
     tm = tm * tg;
-    ccos[mi-1] = cosm1 * cosfi - sinm1 * sinfi;
-    ssin[mi-1] = sinm1 * cosfi + cosm1 * sinfi;
-    cosm1 = ccos[mi-1];
-    sinm1 = ssin[mi-1];
+    const ccos = cosm1 * cosfi - sinm1 * sinfi;
+    const ssin = sinm1 * cosfi + cosm1 * sinfi;
+    cosm1 = ccos;
+    sinm1 = ssin;
 
     let t = 0.0, dtt = 0.0;
     if (theta < tetanm) {
@@ -879,11 +881,11 @@ function fialcos(r, theta, phi, n, theta0, dt) {
       dtt = -t * mi * 0.5 * (tg + ctg);
     }
 
-    btn[mi-1] =  mi * t * ccos[mi-1] / ro;
-    bpn[mi-1] = -dtt * ssin[mi-1] / r;
+    btnLast =  mi * t * ccos / ro;
+    bpnLast = -dtt * ssin / r;
   }
 
-  return [btn[n-1] * 800.0, bpn[n-1] * 800.0];
+  return [btnLast * 800.0, bpnLast * 800.0];
 }
 
 // ---------------------------------------------------------------------------

@@ -65,7 +65,9 @@ function applyVertexColors(geometry, bMags, tubularSegments, radialSegments) {
 
 /**
  * Create a Three.js mesh for a traced field line.
- * @param {number[][]} points - Array of [x, y, z] or [x, y, z, bMag] in km
+ * @param {number[][]|{flat: Float32Array, count: number}} points -
+ *   Either an array of [x, y, z] / [x, y, z, bMag] points in km, or the
+ *   packed form from fieldLinePacking.js (flat stride-4 array).
  * @param {object} options - { color, radius, radialSegments, colorByB }
  * @returns {THREE.Mesh}
  */
@@ -74,20 +76,41 @@ export function createFieldLineMesh(points, options = {}) {
   const radialSegments = options.radialSegments || 5;
   const color = options.color || 0x00aaff;
   const colorByB = options.colorByB ?? false;
+  const tubularSegments = options.tubularSegments ?? TUBE_SEGMENTS;
 
-  // Extract xyz (and optional bMag) from each point
-  const vectors = [];
-  const bMags = [];
-  for (const pt of points) {
-    vectors.push(new THREE.Vector3(pt[0] * KM_TO_SCENE, pt[1] * KM_TO_SCENE, pt[2] * KM_TO_SCENE));
-    if (colorByB && pt[3] != null) bMags.push(pt[3]);
+  const isPacked = !Array.isArray(points);
+  const count = isPacked ? points.count : points.length;
+  if (count < 2) return null;
+
+  // TubeGeometry resamples the curve at `tubularSegments` parameter values,
+  // so a CatmullRom curve through every traced point (often thousands) wastes
+  // Vector3 construction and arc-length work. Decimate to ~2 knots per tube
+  // segment — visually identical, endpoints always kept.
+  const target = Math.min(count, 2 * tubularSegments + 1);
+
+  const vectors = new Array(target);
+  const bMags = colorByB ? new Array(target) : null;
+  for (let i = 0; i < target; i++) {
+    const srcIdx = target === count ? i : Math.round((i * (count - 1)) / (target - 1));
+    let x, y, z, mag;
+    if (isPacked) {
+      const base = srcIdx * 4;
+      x = points.flat[base];
+      y = points.flat[base + 1];
+      z = points.flat[base + 2];
+      mag = points.flat[base + 3];
+    } else {
+      const pt = points[srcIdx];
+      x = pt[0];
+      y = pt[1];
+      z = pt[2];
+      mag = pt[3];
+    }
+    vectors[i] = new THREE.Vector3(x * KM_TO_SCENE, y * KM_TO_SCENE, z * KM_TO_SCENE);
+    if (bMags) bMags[i] = mag ?? 0;
   }
 
-  if (vectors.length < 2) return null;
-
   const curve = new THREE.CatmullRomCurve3(vectors);
-
-  const tubularSegments = options.tubularSegments ?? TUBE_SEGMENTS;
   const geometry = new THREE.TubeGeometry(
     curve,
     tubularSegments,
@@ -96,7 +119,10 @@ export function createFieldLineMesh(points, options = {}) {
     false
   );
 
-  const useVertexColors = colorByB && bMags.length >= 2;
+  // Legacy 3-component point arrays carry no metric — fall back to the flat
+  // material (matches the old behaviour of skipping null pt[3] values).
+  const hasMetrics = isPacked || (points[0] && points[0][3] != null);
+  const useVertexColors = colorByB && hasMetrics && bMags !== null;
 
   if (useVertexColors) {
     applyVertexColors(geometry, bMags, tubularSegments, radialSegments);

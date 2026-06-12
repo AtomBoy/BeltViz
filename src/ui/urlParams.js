@@ -13,9 +13,10 @@
  *   - isoLevels serialized as comma-separated active level keys: "8,10"
  */
 
-// Default values — mirrors src/main.js `params` object.
+// Default values — mirrors src/utils/defaultParams.js DEFAULT_PARAMS.
 // Used to skip writing params that haven't changed from defaults.
-const DEFAULTS = {
+// The drift-guard test in tests/urlParams.test.js asserts these stay in sync.
+export const DEFAULTS = {
   maxDegree:           13,
   numLatitudes:        4,
   numLongitudes:       8,
@@ -57,15 +58,26 @@ const DEFAULTS = {
 
 /**
  * Parse the current URL hash and return param overrides + isoLevels string.
+ * Thin browser wrapper around parseHashString().
+ *
+ * @returns {{ params: object, isoLevels: string|null, camera: object|null }}
+ */
+export function readFromUrl() {
+  return parseHashString(window.location.hash.slice(1));
+}
+
+/**
+ * Parse a URL hash string (without the leading '#') into param overrides.
+ * Pure function — no window access — so it can be unit-tested in node.
  *
  * Only keys present in the hash are returned — missing keys leave params at
  * their existing defaults. Numeric values that parse as NaN are silently skipped.
  *
- * @returns {{ params: object, isoLevels: string|null }}
+ * @param {string} hash - e.g. "maxDegree=8&dst=-120"
+ * @returns {{ params: object, isoLevels: string|null, camera: object|null }}
  */
-export function readFromUrl() {
-  const hash = window.location.hash.slice(1);
-  if (!hash) return { params: {}, isoLevels: null };
+export function parseHashString(hash) {
+  if (!hash) return { params: {}, isoLevels: null, camera: null };
 
   const sp = new URLSearchParams(hash);
   const out = {};
@@ -178,6 +190,22 @@ export function scheduleUrlWrite(params, camera = null) {
 }
 
 function _doWrite(params, camera) {
+  const str = buildHashString(params, camera ? camera.position : null);
+  // replace() avoids polluting browser history with every slider change
+  window.location.replace(str ? '#' + str : window.location.pathname + window.location.search);
+}
+
+/**
+ * Serialize params (and optional camera position) into a URL hash query
+ * string (no leading '#'). Pure function — no window access — so URL
+ * round-trips can be unit-tested in node. Only non-default values are
+ * written, keeping shared URLs short.
+ *
+ * @param {object} params - The main params object from main.js
+ * @param {{x: number, y: number, z: number}|null} cameraPos - camera position
+ * @returns {string} e.g. "maxDegree=8&dst=-120" or "" when all defaults
+ */
+export function buildHashString(params, cameraPos = null) {
   const sp = new URLSearchParams();
   const d  = DEFAULTS;
 
@@ -205,10 +233,13 @@ function _doWrite(params, camera) {
   set('isoRes',    params.isoResolution,   d.isoResolution);
   set('isoOpacity', params.isoOpacity,     d.isoOpacity);
 
-  // isoLevels: comma-separated active keys
+  // isoLevels: comma-separated active keys, sorted numerically (a plain
+  // .sort() is lexicographic — '10' < '2' — which could never match the
+  // default string, so isoLevels was written to every URL)
   if (params.isoLevels && Object.keys(params.isoLevels).length) {
     const active = Object.entries(params.isoLevels)
-      .filter(([, v]) => v).map(([k]) => k).sort().join(',');
+      .filter(([, v]) => v).map(([k]) => k)
+      .sort((a, b) => Number(a) - Number(b)).join(',');
     if (active !== d.isoLevels) sp.set('isoLevels', active);
   }
 
@@ -250,8 +281,8 @@ function _doWrite(params, camera) {
   // Camera position (default: 0, 1.5, 4). Written as an atomic unit — all three
   // or none — so that a partial URL (e.g. camX=0 omitted) can never leave the
   // camera half-restored on load.
-  if (camera) {
-    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+  if (cameraPos) {
+    const cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
     if (cx !== 0 || cy !== 1.5 || cz !== 4) {
       const fmt = (v) => String(parseFloat(v.toPrecision(6)));
       sp.set('camX', fmt(cx));
@@ -260,7 +291,5 @@ function _doWrite(params, camera) {
     }
   }
 
-  const str = sp.toString();
-  // replace() avoids polluting browser history with every slider change
-  window.location.replace(str ? '#' + str : window.location.pathname + window.location.search);
+  return sp.toString();
 }

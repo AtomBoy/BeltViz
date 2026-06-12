@@ -209,19 +209,24 @@ function buildPanel() {
 
   document.body.appendChild(panelEl);
 
-  // Close on Escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isVisible) hide();
-  });
+  // Named handlers so destroySatellitePanel() can remove them — anonymous
+  // listeners here would accumulate if the panel is ever re-initialised.
+  document.addEventListener('keydown', onDocKeydown);
+  document.addEventListener('mousedown', onDocMousedown);
+}
 
-  // Close on click outside
-  document.addEventListener('mousedown', (e) => {
-    if (isVisible && panelEl && !panelEl.contains(e.target)) {
-      // Don't close if clicking the "Search Satellites" button in the GUI
-      if (e.target.closest && e.target.closest('#sat-open-btn')) return;
-      hide();
-    }
-  });
+/** Close on Escape. */
+function onDocKeydown(e) {
+  if (e.key === 'Escape' && isVisible) hide();
+}
+
+/** Close on click outside. */
+function onDocMousedown(e) {
+  if (isVisible && panelEl && !panelEl.contains(e.target)) {
+    // Don't close if clicking the "Search Satellites" button in the GUI
+    if (e.target.closest && e.target.closest('#sat-open-btn')) return;
+    hide();
+  }
 }
 
 // ─── Search logic ─────────────────────────────────────────────────────────────
@@ -357,11 +362,30 @@ function escHtml(str) {
  * @param {Function} opts.onSelect    - callback(globalIndex) when satellite selected
  */
 export function initSatellitePanel(satellites, opts = {}) {
+  if (panelEl) destroySatellitePanel(); // idempotent — re-init replaces the old panel
+
   catalogSatellites = satellites;
   onSelectCallback = opts.onSelect ?? null;
 
   buildPanel();
   renderResults();
+}
+
+/**
+ * Tear down the panel: remove document-level listeners and DOM, reset state.
+ * Safe to call when the panel was never initialised.
+ */
+export function destroySatellitePanel() {
+  document.removeEventListener('keydown', onDocKeydown);
+  document.removeEventListener('mousedown', onDocMousedown);
+  clearTimeout(debounceTimer);
+  if (panelEl) panelEl.remove();
+  panelEl = null;
+  resultsEl = null;
+  searchInput = null;
+  selectedInfoEl = null;
+  isVisible = false;
+  currentSelectedIndex = -1;
 }
 
 /** Show the search panel. */
