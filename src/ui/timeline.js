@@ -65,16 +65,10 @@ function injectStyles() {
     }
     #tl-controls {
       display: flex; align-items: center; gap: 6px;
-      padding: 0 12px; flex-shrink: 0; width: 230px;
+      padding: 0 12px; flex-shrink: 0;
     }
     #tl-clock { text-align: center; min-width: 84px; }
-    #tl-kp-badge {
-      padding: 2px 8px; border-radius: 4px;
-      font-size: 11px; font-weight: bold; color: #fff;
-      background: rgba(40, 150, 80, 0.7);
-      white-space: nowrap; flex-shrink: 0;
-    }
-    #tl-date  { font-size: 11px; color: #88ccff; line-height: 1.3; }
+#tl-date  { font-size: 11px; color: #88ccff; line-height: 1.3; }
     #tl-time  {
       font-size: 13px; font-weight: bold;
       font-family: 'Courier New', monospace; line-height: 1.3;
@@ -201,8 +195,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
         <div id="tl-time"></div>
       </div>
       <button class="tl-btn" id="tl-next" title="Next week">⏭</button>
-      <span id="tl-kp-badge" title="Kp index: green &lt; 3 (quiet), amber 3–5 (moderate storm), red &gt; 5 (severe storm)">Kp –</span>
-      <button class="tl-btn" id="tl-play" title="Play / Pause">▶</button>
+<button class="tl-btn" id="tl-play" title="Play / Pause">▶</button>
       <select class="tl-select" id="tl-speed" title="Playback speed">
         <option value="1">1×</option>
         <option value="60" selected>60×</option>
@@ -250,8 +243,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
   const elPlayBtn = container.querySelector('#tl-play');
   const bar       = container.querySelector('#tl-bar');
   const elKpVal   = container.querySelector('#tl-kp-val');
-  const elKpBadge = container.querySelector('#tl-kp-badge');
-  const elKpFill  = container.querySelector('#tl-kp-fill');
+const elKpFill  = container.querySelector('#tl-kp-fill');
   const elKpMk    = container.querySelector('#tl-kp-mk');
   const elDstVal  = container.querySelector('#tl-dst-val');
   const elDstFill = container.querySelector('#tl-dst-fill');
@@ -527,13 +519,7 @@ export function createTimeline({ initialTime, onTimeChange, onPause, onPeriodicR
         elKpFill.style.width      = kpPct + '%';
         elKpFill.style.background = kpColor;
         elKpMk.style.left         = kpPct + '%';
-        if (elKpBadge) {
-          elKpBadge.textContent = 'Kp ' + kpSafe.toFixed(1);
-          elKpBadge.style.background =
-            kpSafe < 3 ? 'rgba(40, 150, 80, 0.7)'
-            : kpSafe <= 5 ? 'rgba(200, 120, 30, 0.7)'
-            : 'rgba(180, 40, 40, 0.7)';
-        }
+
       }
 
       // ── Dst gauge (storm intensity, 0=quiet → 1 at Dst=−200) ─────────────
