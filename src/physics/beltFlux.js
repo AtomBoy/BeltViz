@@ -7,7 +7,7 @@
  * All functions are pure with no DOM or Three.js dependencies.
  *
  * References:
- *   - Meredith et al. (2003), JGR 108(A4), doi:10.1029/2002JA009811
+ *   - Meredith et al. (2003), JGR 108(A6), 1248, doi:10.1029/2002JA009764
  *     Relativistic electron flux at geostationary orbit scales roughly
  *     exponentially with Kp; the linear approximation here gives the same
  *     trend for visual purposes.

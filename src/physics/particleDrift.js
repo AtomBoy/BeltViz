@@ -74,8 +74,9 @@ export function driftShellPosition(L, phi, lambdaM) {
  * Particles with equatorial pitch angle below this threshold precipitate into
  * the atmosphere along field lines, producing aurora.
  *
- * Formula (Lyons & Schulz 1989, eq. 2.3, dipole approximation):
- *   sin²(α_LC) = 4 / (L³ × √(4 − 3/L))
+ * Formula (Lyons & Williams 1984, "Quantitative Aspects of Magnetospheric
+ * Physics", dipole approximation):
+ *   sin²(α_LC) = 1 / (L³ × √(4 − 3/L))  =  (4L⁶ − 3L⁵)^(−1/2)
  *
  * @param {number} L McIlwain L-shell (≥ 1)
  * @returns {number} Loss cone half-angle in radians
@@ -83,7 +84,7 @@ export function driftShellPosition(L, phi, lambdaM) {
 export function lossConeAngle(L) {
   if (L < 1) return Math.PI / 2;
   const denom = L * L * L * Math.sqrt(Math.max(4 - 3 / L, 1e-6));
-  const sinSq = Math.min(4 / denom, 1);
+  const sinSq = Math.min(1 / denom, 1);
   return Math.asin(Math.sqrt(sinSq));
 }
 

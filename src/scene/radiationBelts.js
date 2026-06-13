@@ -10,6 +10,10 @@ import * as THREE from 'three';
 //   Outer belt core: ±22° magnetic latitude
 const INNER_LAT_LIMIT = 35 * Math.PI / 180;
 const OUTER_LAT_LIMIT = 22 * Math.PI / 180;
+// Storage ring: narrow, strongly equatorially-confined band of ultra-relativistic
+// electrons (Baker et al. 2013 observed a thin ring; ±18° keeps it visually
+// distinct from the thicker outer belt it sits just inside of).
+const STORAGE_LAT_LIMIT = 18 * Math.PI / 180;
 
 /**
  * Radiation belt definitions.
@@ -43,12 +47,16 @@ export const BELT_DEFINITIONS = [
   {
     name: 'storageBelt',
     label: 'Storage Belt (3rd)',
-    // Outer-boundary ultra-relativistic electron enhancement at L=6–8.5 Re.
-    // Appears beyond the outer belt's storm-time maximum (~5.6 Re at Kp=7),
-    // placing it clearly as the third outward ring: inner → outer → third.
-    lMin: 6.0,
-    lMax: 8.5,
-    latLimit: OUTER_LAT_LIMIT,              // ±22°, equatorial trapping geometry
+    // Storm-time "storage ring" of ultra-relativistic (>2 MeV) electrons at
+    // L ≈ 3.0–3.5 Re, between the inner and outer belts (Baker et al. 2013,
+    // Science 340; mechanism in Shprits et al. 2013, Nature Physics 9):
+    // ULF radial transport drives electrons inward during the storm main
+    // phase, where they are stably trapped because VLF pitch-angle scattering
+    // is absent at these L-shells. Rendered as a thin violet ring just inside
+    // the outer belt's inner edge; flux thresholds in beltFlux.js.
+    lMin: 3.0,
+    lMax: 3.5,
+    latLimit: STORAGE_LAT_LIMIT,            // ±18°, narrow equatorial ring
     color: new THREE.Color(0.55, 0.0, 0.9), // violet/purple
     opacity: 0.8, // slider-relative multiplier (see updateBeltFlux)
   },
