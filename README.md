@@ -216,14 +216,17 @@ r(λ) = L · cos²(λ)       [Earth radii]
 y(λ) = L · cos²(λ) · sin(λ)  [north-south]
 ```
 
-Each belt is swept azimuthally with a **D-shaped cross-section**: inner boundary at fixed `lMin`, outer boundary tapers from `lMax` at the equator to `lMin` at ±`latLimit` (the loss-cone latitude) so the tips close smoothly. Definitions:
+Each belt is swept azimuthally with a **rounded iso-flux cross-section** — an ellipse in (L, λ) space (`L(t) = L_mid + L_half·cos t`, `λ(t) = latLimit·sin t`) mapped through the dipole geometry above. This models a smooth iso-flux contour, giving the classic concave-inner-edge crescent without the unphysical cusps (and below-surface inner edge) of the older field-line-wall profile. The meshes depict each belt's **high-flux core** (AP8/AE8 peak region, Vette 1991), not the maximum trapping envelope. Definitions:
 
 | Belt | L range | Lat limit | Color |
 |---|---|---|---|
-| Inner (CRAND protons) | L = 1.2–2.0 | ±38° | warm orange |
-| Outer (storm electrons) | L = 3.0–5.0 | ±28° | teal/cyan |
+| Inner (CRAND protons) | L = 1.3–1.9 | ±35° | warm orange/crimson |
+| Outer (storm electrons) | L = 3.0–4.8 (→ ~5.6 at high Kp) | ±22° | teal/cyan |
+| Storage / 3rd (storm only) | L = 3.0–3.5 | ±18° | violet |
 
-**Storm deformation** (`applyStormDeformation`): outer belt vertices are scaled radially by `1 − stormIntensity × 0.22 × cos(angle_from_sun)`. This compresses the dayside and stretches the nightside as the Dst index worsens.
+The **storage belt** is the transient ultra-relativistic electron ring between the inner and outer belts (Baker et al. 2013; Shprits et al. 2013). It is invisible at quiet times and fades in during storms (Dst < −50 nT and Kp ≳ 3), sharing the Outer Belt visibility toggle.
+
+**Storm deformation** (`applyStormDeformation`): outer **and storage** belt vertices are scaled radially by `1 − stormIntensity × 0.22 × cos(angle_from_sun)`, compressing the dayside and stretching the nightside as the Dst index worsens. The shared radial scale preserves the gap between the storage and outer belts. The inner belt is stable and does not deform.
 
 **Dipole tilt**: the belt group and particle mesh are both rotated by the IGRF dipole quaternion so they align with the real magnetic axis rather than the geographic pole. The tilt axis is derived from IGRF degree-1 coefficients `(g₁₀, g₁₁, h₁₁)`:
 
@@ -241,8 +244,8 @@ Four physically distinct populations are simulated as `THREE.Points` (additive b
 
 | Pop | Species | Source | L range | Lifetime | Color |
 |---|---|---|---|---|---|
-| A | Proton (inner) | CRAND — cosmic ray neutron decay | 1.2–2.0 | 300–600 s | orange |
-| B | Electron (inner) | Inward radial diffusion | 1.5–2.0 | 120 s | blue |
+| A | Proton (inner) | CRAND — cosmic ray neutron decay | 1.3–1.9 | 300–600 s | orange |
+| B | Electron (inner) | Inward radial diffusion | 1.5–1.9 | 120 s | blue |
 | C | Electron (outer) | Nightside plasma sheet, storm-driven | 3.0–4.5 | 25–45 s | blue |
 | D | Proton (ring current) | Nightside plasma sheet, storm-driven | 1.5–4.5 | 35–45 s | orange |
 
@@ -284,7 +287,7 @@ node scripts/convert-solarwind.js 2025 /path/to/WGhour.d   # explicit path
 node scripts/convert-solarwind.js 2025 /path/to/omni2.dat  # OMNI2 fallback (no G1/G2)
 ```
 
-Output: `public/data/solarwind/YYYY-MM.json`. The app lazy-loads per month at runtime.
+Output: `public/data/solarwind/YYYY-MM.json`. The app lazy-loads per month at runtime. Monthly files currently ship for **1963-11 → present**, so historical storms (e.g. March 1989, Dst ≈ −589) are playable; months without a data file simply 404 and the app falls back to the manual sliders.
 
 ### Satellite catalog & TLEs
 

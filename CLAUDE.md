@@ -90,9 +90,9 @@ coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCube
 
 ### Radiation belt visualization
 
-Belt meshes are **analytic dipole toroids** built in `src/scene/radiationBelts.js` — no marching cubes. Each belt is a revolved D-shaped cross-section: inner boundary at fixed `lMin`, outer boundary tapers from `lMax` at the equator to `lMin` at ±`latLimit` (loss-cone latitude) so the tips close smoothly. `nLat=80` profile points, `nAz=120` azimuthal segments. Definitions: inner belt L=1.2–2.0, ±38°; outer belt L=3.0–5.0, ±28°.
+Belt meshes are **analytic dipole toroids** built in `src/scene/radiationBelts.js` — no marching cubes. Each belt's cross-section is a **rounded iso-flux contour**: an ellipse in (L, λ_m) space (`L(t)=L_mid+L_half·cos t`, `λ(t)=latLimit·sin t`) mapped through the dipole field-line geometry (`ρ=L·cos³λ`, `y=L·cos²λ·sinλ`) and revolved azimuthally. `nLat=80` profile points, `nAz=120` segments. The meshes depict each belt's **high-flux core** (AP8/AE8 peak region, Vette 1991), not the maximum trapping envelope. Definitions (`BELT_DEFINITIONS`): inner belt L=1.3–1.9 ±35°; outer belt L=3.0–4.8 ±22° (outer edge expands toward ~5.6 at high Kp, Ganushkina 2011); **storage (3rd) belt L=3.0–3.5 ±18°** (violet ring between the belts, appears only during storms — the Baker 2013 / Shprits 2013 storage ring).
 
-**Storm deformation**: outer belt only. `applyStormDeformation()` scales each vertex radially by `1 − stormIntensity × 0.22 × cos(φ − sunLon)`. `stormIntensity = min(1, |Dst| / 150)`. Inner belt (CRAND protons) is stable and does not deform.
+**Storm deformation**: outer **and storage** belts. `applyStormDeformation()` scales each vertex radially by `1 − stormIntensity × 0.22 × cos(φ − sunLon)`. `stormIntensity = min(1, |Dst| / 150)`. Inner belt (CRAND protons) is stable and does not deform; the storage belt shares the same radial scale so the gap between it and the storm-stretched outer belt is preserved.
 
 **Dipole tilt**: both `radiationBeltGroup` and `particleSystem.mesh` are rotated by `getDipoleQuaternion()`. The axis is `new THREE.Vector3(-g11, -g10, -h11).normalize()` from IGRF degree-1 coefficients — pointing toward **magnetic north** (~10° from geographic +Y). Using the un-negated vector `(g11, g10, h11)` would point to magnetic south (~170° rotation from +Y), causing `setFromUnitVectors(Y, near-Y-neg)` to choose an ill-conditioned azimuthal rotation axis, producing a wrong ~90° CCW offset in the belt tilt.
 
@@ -127,8 +127,8 @@ Storm presets: Quiet (v=400, n=5, Bz=0, Dst=0), Moderate Storm (v=500, n=10, Bz=
 
 | Pop | Label | Species | Source | L range | Lifetime |
 |---|---|---|---|---|---|
-| A | CRAND | Proton | Cosmic ray neutron decay, constant | 1.2–2.0 | 300–600 s |
-| B | InnerElec | Electron | Inward radial diffusion, constant | 1.5–2.0 | 120 s |
+| A | CRAND | Proton | Cosmic ray neutron decay, constant | 1.3–1.9 | 300–600 s |
+| B | InnerElec | Electron | Inward radial diffusion, constant | 1.5–1.9 | 120 s |
 | C | OuterElec | Electron | Nightside injection, Dst-driven | 3.0–4.5 | 25–45 s |
 | D | RingCurrent | Proton | Nightside injection, Dst-driven | 1.5–4.5 | 35–45 s |
 
@@ -201,6 +201,13 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `solarWind.test.js` — dynamic pressure, standoff distance, magnetopause geometry, GSM transforms, solarWindToKp mapping, external B behaviors, NaN safety
 - `totalField.test.js` — IGRF passthrough when disabled, subsolar enhancement, magnetopause confinement
 - `satellitePosition.test.js` — geographic-to-physics coordinate conversion, pole positions, altitude offsets
+
+### Verifying in the browser
+
+When driving the app via Playwright/devtools to verify a change:
+- **Hash-only navigation does not reload the SPA.** Changing `location.hash` (e.g. to a different `#date=...`) leaves the current state in place. Force a reload: `location.hash = '...'; location.reload();` or navigate with a full page load.
+- **Solar wind gauges (Kp/Dst/Bz) read "–" on first load** until the timeline advances. `applyDataSolarWind()` runs once at init before the async month fetch resolves, and nothing re-triggers it; the `setOnMonthLoaded` callback only repaints the timeline color bar. Nudge time (click `#tl-next` then `#tl-prev`, or press play) to populate the gauges with loaded data.
+- Belts/particles read storm state from `getSolarWindParams()`, which returns `null` when `solarWindEnabled` is false. The storage belt only renders when `storageBeltFlux > 0` (needs Dst < −50 **and** Kp ≥ 2.5).
 
 ## Documentation & Citations
 
