@@ -141,6 +141,10 @@
         Runge–Kutta (RK4) to trace field lines from seed points on the surface.
         The spherical harmonic degree slider lets you see how successive multipoles
         add complexity to the pure tilted dipole.
+        Coefficients for every IGRF epoch from 1900 to 2025 ship with the app and are
+        interpolated to the simulation date as the timeline moves, so the field's slow
+        secular drift (including the wandering magnetic poles) is reproduced; beyond
+        2025 the model extrapolates using the published secular-variation rates.
       </div>
     </div>
     <div class="step">
@@ -155,6 +159,9 @@
         single closed-form evaluation. It is parameterized by dynamic pressure,
         Dst, IMF By/Bz, and the G1/G2 storm-history indices from the Qin-Denton
         database. The Shue (1998) model defines the magnetopause boundary.
+        The inputs come from the manual sliders, from one of three presets
+        (<em>Quiet</em>, <em>Moderate Storm</em>, <em>Severe Storm</em>), or — in
+        <em>Historical Data</em> mode — from the timeline playback described below.
       </div>
     </div>
     <div class="step">
@@ -179,6 +186,14 @@
     around the flux peak in the AP8/AE8 trapped-particle models (inner belt
     L&nbsp;≈&nbsp;1.3–1.9, peak near L&nbsp;≈&nbsp;1.5; outer belt L&nbsp;≈&nbsp;3.0–4.8,
     peak near L&nbsp;≈&nbsp;4.0–4.5) — not the larger maximum trapping envelope.
+    The outer belt's outer edge expands toward L&nbsp;≈&nbsp;5.6 at high geomagnetic
+    activity (Kp&nbsp;≥&nbsp;7), following the observed boundary motion
+    (Ganushkina et al. 2011).
+    During strong storms (Dst&nbsp;&lt;&nbsp;−50&nbsp;nT and Kp&nbsp;≳&nbsp;3) a third,
+    violet <em>storage ring</em> fades in at L&nbsp;≈&nbsp;3.0–3.5, just inside the outer
+    belt's inner edge — the narrow band of ultra-relativistic electrons discovered by the
+    Van Allen Probes (Baker et al. 2013; mechanism in Shprits et al. 2013). It shares the
+    Outer Belt visibility toggle and disappears as conditions quiet.
     Separate L-shell isosurfaces use the internal field only; the dipole L approximation
     breaks down with external fields in the tail and at the magnetopause.
   </div>
@@ -214,7 +229,10 @@
   <p>
     This asymmetry is visible in the field line tubes in this visualization: dayside lines
     are short and tightly arched; nightside lines are drawn far into the tail. The magnetopause
-    shape itself can be displayed via <em>Solar Wind → Show Magnetopause</em>.
+    shape itself can be displayed via <em>Solar Wind → Show Magnetopause</em>, and the bow
+    shock via <em>Show Bow Shock</em> — drawn using the Farris &amp; Russell (1994) scaling,
+    which places the shock standoff about 1.36× the magnetopause standoff with a slightly
+    more open flare.
   </p>
 
   <h3>The key driver: IMF B<sub>z</sub></h3>
@@ -282,6 +300,9 @@
         With solar wind enabled the tubes are visibly asymmetric: compressed and arched on
         the dayside, stretched into the nightside tail. The shape responds in real time to
         the solar wind sliders and to historical data during playback.
+        A <em>Color by Solar Wind Influence</em> toggle recolors each tube by how much of
+        the local field is external rather than internal — a red gradient highlighting
+        where the solar wind, not Earth, dominates.
       </div>
     </div>
     <div class="step">
@@ -294,11 +315,22 @@
         plane in a dipole field. These surfaces represent <em>drift shells</em>: a trapped
         particle does not stay on a single field line but drifts azimuthally around Earth,
         sweeping through a full ring of field lines. L tells you which drift orbit the
-        particle occupies, not which field line it sits on. In a pure dipole these shells
-        are perfect tori; with T01 enabled they distort, and during severe storms the
-        outer boundary can be clipped by the magnetopause.
+        particle occupies, not which field line it sits on. These surfaces are computed
+        from the internal (IGRF) field using the dipole L approximation, so they keep
+        their smooth dipole shape even with solar wind enabled — but grid cells outside
+        the magnetopause are excluded, so during severe storms the outermost shells are
+        visibly cut off where they cross the compressed dayside boundary.
+        A second isosurface mode renders contours of field strength |B|
+        (500–10,000&nbsp;nT) instead of L.
       </div>
     </div>
+  </div>
+
+  <div class="callout">
+    <strong>Cutaway views</strong> — The <em>Clipping</em> controls slice the scene with
+    an equatorial or meridional plane (the meridional cut angle is adjustable). Clipping
+    the belts meridionally exposes their cross-sections — the classic crescent-shaped
+    belt diagram from textbooks, here computed live from the dipole geometry.
   </div>
 
   <div class="callout">
@@ -357,8 +389,9 @@
     the solar wind. This process — <strong>magnetopause shadowing</strong> — can deplete
     electrons at L&nbsp;&gt;&nbsp;5–6 by 60–99% within a few hours of storm onset
     (Herrera et al. 2016; Staples et al. 2022).
-    In this visualization, with the Severe Storm solar wind preset enabled, the outer
-    belt L-shell surface is cut open on the dayside, leaving an incomplete torus: the
+    In this visualization, with the Severe Storm solar wind preset enabled, the outermost
+    L-shell isosurfaces (<em>Isosurfaces → L-shell mode</em>) are cut open on the dayside,
+    leaving an incomplete torus: the
     open region represents drift shells that particles cannot maintain without crossing the
     magnetopause and being lost. The belt recovers when the solar wind pressure relents
     and new particles are injected on the nightside.
@@ -489,7 +522,7 @@
         Resolving magnetopause shadowing using multimission measurements of phase space density
       </div>
       <div class="cite-authors">
-        Staples, F.A., Rae, I.J., Forsyth, C., Martin, C.J., &amp; DeWit, J. (2022).
+        Staples, F.A., Kellerman, A., Murphy, K.R., Rae, I.J., Sandhu, J.K., &amp; Forsyth, C. (2022).
         <em>Journal of Geophysical Research: Space Physics</em>, 127, e2021JA029298.
         <a href="https://doi.org/10.1029/2021JA029298" target="_blank">doi:10.1029/2021JA029298</a>
       </div>
@@ -567,6 +600,23 @@
       <div class="cite-note">
         Comprehensive review of belt structure and dynamics; supports the core L-ranges
         and equatorially-confined geometry used for the belt meshes.
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Locations of boundaries of outer and inner radiation belts as observed by
+        Cluster and Double Star
+      </div>
+      <div class="cite-authors">
+        Ganushkina, N.Yu., Dandouras, I., Shprits, Y.Y., &amp; Cao, J. (2011).
+        <em>Journal of Geophysical Research: Space Physics</em>, 116, A09234.
+        <a href="https://doi.org/10.1029/2010JA016376" target="_blank">doi:10.1029/2010JA016376</a>
+      </div>
+      <div class="cite-note">
+        Observed motion of the outer belt boundaries with geomagnetic activity;
+        basis for the Kp-driven expansion of the rendered outer belt
+        (outer edge grows toward L&nbsp;≈&nbsp;5.6 at Kp&nbsp;≥&nbsp;7).
       </div>
     </div>
 
@@ -783,7 +833,7 @@
     <div class="step">
       <div class="step-num">A</div>
       <div class="step-body">
-        <strong style="color:#e07030;">Inner belt protons — CRAND source (L = 1.2–2.0)</strong><br>
+        <strong style="color:#e07030;">Inner belt protons — CRAND source (L = 1.3–1.9)</strong><br>
         <em>Cosmic Ray Albedo Neutron Decay</em>: galactic cosmic rays (the most energetic particles
         in the universe) continuously bombard Earth's upper atmosphere. They produce cascades of
         secondary neutrons. Some of those neutrons escape upward and then decay in flight —
@@ -797,14 +847,16 @@
     <div class="step">
       <div class="step-num">B</div>
       <div class="step-body">
-        <strong style="color:#4070e0;">Inner belt electrons — inward diffusion (L = 1.5–2.0)</strong><br>
+        <strong style="color:#4070e0;">Inner belt electrons — inward diffusion (L = 1.5–1.9)</strong><br>
         Electrons from the outer belt slowly diffuse inward through radial diffusion, driven by
-        ULF wave activity. They accumulate in the outer portion of the inner belt (L&nbsp;=&nbsp;1.5–2.0)
+        ULF wave activity. They accumulate in the outer portion of the inner belt (L&nbsp;=&nbsp;1.5–1.9)
         but rarely reach the deep inner belt (L&nbsp;&lt;&nbsp;1.5) where the proton population
         dominates. This is a small, steady population — independent of the current storm state.
         Blue particles, drifting eastward (counterclockwise) and visibly <em>faster</em> than
-        the colocated CRAND protons: at the same L-shell, 1&nbsp;MeV electrons complete an orbit
-        in roughly one-sixth the time of 30&nbsp;MeV CRAND protons (drift period ∝ 1/E).
+        the colocated CRAND protons: at the same L-shell, a 1&nbsp;MeV electron completes an orbit
+        in roughly half the time of a 30&nbsp;MeV CRAND proton (drift period
+        T&nbsp;≈&nbsp;1.05&nbsp;/&nbsp;(L·E<sub>MeV</sub>) hours for electrons versus
+        ≈&nbsp;58&nbsp;/&nbsp;(L·E<sub>MeV</sub>) hours for protons — Schulz &amp; Lanzerotti 1974).
         When viewed together, the overlapping orange and blue glow of populations A and B produces
         a warm, mixed-colour inner belt — a visible signature of two species coexisting.
       </div>
@@ -812,7 +864,7 @@
     <div class="step">
       <div class="step-num">C</div>
       <div class="step-body">
-        <strong style="color:#4070e0;">Outer belt electrons — storm injection (L = 3.0–6.0)</strong><br>
+        <strong style="color:#4070e0;">Outer belt electrons — storm injection (L ≈ 3.0–4.5)</strong><br>
         During geomagnetic storms, the compressed nightside plasma sheet injects large fluxes of
         electrons inward. These electrons are quickly energised by betatron and Fermi acceleration
         during inward transport, and further accelerated over hours to days by chorus wave-particle
@@ -825,12 +877,13 @@
     <div class="step">
       <div class="step-num">D</div>
       <div class="step-body">
-        <strong style="color:#e07030;">Ring current protons — storm injection (L = 1.5–4.5)</strong><br>
+        <strong style="color:#e07030;">Ring current protons — storm injection (L ≈ 2.5–4.5)</strong><br>
         Injected alongside the outer belt electrons from the nightside plasma sheet, these are the
         10–300&nbsp;keV protons that <em>are</em> the ring current — the same current whose
         depression of Earth's surface field we measure as the Dst index. The Dst is, in effect,
-        a direct measurement of the energy content of these protons. They inhabit a wider L-range
-        than the outer belt electrons and, crucially, are <strong>not blocked by the slot region</strong>
+        a direct measurement of the energy content of these protons. They are injected deeper
+        than the outer belt electrons — compressing to L&nbsp;≈&nbsp;1.5–3.0 in severe storms —
+        and, crucially, are <strong>not blocked by the slot region</strong>
         — protons can exist freely in the slot (L&nbsp;=&nbsp;2–3). Orange particles drifting
         westward, injection rising with storm intensity.
       </div>
@@ -887,8 +940,8 @@
       <tr><th>Dst (nT)</th><th>Condition</th><th>Injection rate</th><th>Target L-shells</th></tr>
     </thead>
     <tbody>
-      <tr><td>≥ −20</td><td>Quiet</td><td>1× (baseline)</td><td>L = 3.5 – 5.5</td></tr>
-      <tr><td>−20 to −50</td><td>Moderate disturbance</td><td>up to 5×</td><td>L = 3.0 – 5.0</td></tr>
+      <tr><td>≥ −20</td><td>Quiet</td><td>1× (baseline)</td><td>L = 3.0 – 4.5</td></tr>
+      <tr><td>−20 to −50</td><td>Moderate disturbance</td><td>up to 5×</td><td>L = 2.8 – 4.5</td></tr>
       <tr><td>−50 to −150</td><td>Storm main phase</td><td>up to 20×</td><td>L = 2.5 – 4.5</td></tr>
       <tr><td>&lt; −150</td><td>Severe storm</td><td>up to 50×</td><td>L = 2.0 – 4.0</td></tr>
     </tbody>
@@ -926,14 +979,14 @@
     </li>
     <li>
       <strong>September 2017</strong> — X9.3 flare (the largest of Solar Cycle 24),
-      Dst ≈ −142&nbsp;nT; aurora sightings as far south as Texas.
+      Dst ≈ −148&nbsp;nT; aurora sightings as far south as Texas.
       <a href="/#date=2017-09-06T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
         View in visualization ↗
       </a>
     </li>
     <li>
       <strong>May 2024</strong> — first severe storm (G5) in twenty years,
-      Dst ≈ −412&nbsp;nT; widespread aurora across the northern and southern hemispheres.
+      Dst ≈ −406&nbsp;nT; widespread aurora across the northern and southern hemispheres.
       <a href="/#date=2024-05-10T00:00&innerBelt=true&outerBelt=true&particles=true&aurora=true">
         View in visualization ↗
       </a>
@@ -944,6 +997,10 @@
     and aurora already enabled. Set the playback speed to 60× or 3600× to watch the belt
     fill and drain over hours. The Dst readout in the Solar Wind panel updates automatically
     as the timeline advances.
+  </p>
+  <p>
+    Keyboard shortcuts: <code>Space</code> toggles play/pause, <code>←</code>/<code>→</code>
+    step the date by one day, and <code>S</code> saves a PNG screenshot of the current view.
   </p>
 
   <h3>Radiation belt particle physics — references</h3>
@@ -990,28 +1047,29 @@
 
     <div class="cite">
       <div class="cite-title">
-        Access of Energetic Particles to Inner Magnetosphere (Chapter 2 — Loss cone)
+        Quantitative Aspects of Magnetospheric Physics
       </div>
       <div class="cite-authors">
-        Lyons, L.R., &amp; Schulz, M. (1989).
-        <em>Quantitative aspects of magnetospheric physics.</em>
-        American Geophysical Union.
+        Lyons, L.R., &amp; Williams, D.J. (1984).
+        Geophysics and Astrophysics Monographs, Vol. 23. D. Reidel, Dordrecht.
+        ISBN 90-277-1663-3.
       </div>
       <div class="cite-note">
-        Equatorial loss cone formula sin²(α<sub>LC</sub>) = 4&nbsp;/&nbsp;(L³&nbsp;√(4&nbsp;−&nbsp;3/L))
+        Source of the dipole equatorial loss cone formula
+        sin²(α<sub>LC</sub>) = 1&nbsp;/&nbsp;(L³&nbsp;√(4&nbsp;−&nbsp;3/L))
         used in <code>src/physics/particleDrift.js:lossConeAngle()</code>.
       </div>
     </div>
 
     <div class="cite">
       <div class="cite-title">
-        Outer zone relativistic electron acceleration associated with substorm-enhanced
-        whistler mode chorus
+        Evidence for chorus-driven electron acceleration to relativistic energies
+        from a survey of geomagnetically disturbed periods
       </div>
       <div class="cite-authors">
         Meredith, N.P., Cain, M., Horne, R.B., Thorne, R.M., Summers, D., &amp; Anderson, R.R. (2003).
         <em>Journal of Geophysical Research: Space Physics</em>, 108(A6), 1248.
-        <a href="https://doi.org/10.1029/2002JA009511" target="_blank">doi:10.1029/2002JA009511</a>
+        <a href="https://doi.org/10.1029/2002JA009764" target="_blank">doi:10.1029/2002JA009764</a>
       </div>
       <div class="cite-note">
         Empirical basis for the Kp-driven outer belt electron flux model
@@ -1039,7 +1097,7 @@
 
     <div class="cite">
       <div class="cite-title">
-        The cosmic-ray albedo-neutron decay origin of the inner radiation belt
+        Trapped Albedo Theory of the Radiation Belt
       </div>
       <div class="cite-authors">
         Singer, S.F. (1958). <em>Physical Review Letters</em>, 1, 181–183.
@@ -1099,7 +1157,7 @@
     <div class="cite">
       <div class="cite-title">Introduction to Electrodynamics, 4th ed.</div>
       <div class="cite-authors">
-        Griffiths, D.J. (2013). Cambridge University Press.
+        Griffiths, D.J. (2017). Cambridge University Press.
         ISBN 978-1-108-42041-9.
       </div>
       <div class="cite-note">
@@ -1112,7 +1170,6 @@
 
   </div>
 
-  <!-- ═══ PHYSICS MODELS ═══ -->
   <!-- ═══ SATELLITE VISUALIZATION ═══ -->
   <h2>Satellite Visualization</h2>
 
@@ -1133,7 +1190,11 @@
   </p>
 
   <h3>Orbit classification</h3>
-  <p>Official Space Track definitions applied in priority order from TLE line-2 fields:</p>
+  <p>
+    Space Track definitions applied from TLE line-2 fields, tested in priority order —
+    HEO first, then LEO, GEO, MEO (so a highly elliptical orbit is classed HEO even if
+    its mean motion would also satisfy another rule):
+  </p>
 
   <table class="data-table">
     <thead>
@@ -1145,14 +1206,14 @@
     </thead>
     <tbody>
       <tr>
+        <td style="color:#ee66ff;font-weight:600;">HEO</td>
+        <td>Eccentricity &gt; 0.25</td>
+        <td>Molniya, Tundra, IBEX, Chandra, MMS, Van Allen Probes</td>
+      </tr>
+      <tr>
         <td style="color:#c8d8f0;font-weight:600;">LEO</td>
         <td>Mean motion &gt; 11.25 rev/day, eccentricity &lt; 0.25</td>
         <td>ISS, Hubble, Starlink, Sentinel, Landsat</td>
-      </tr>
-      <tr>
-        <td style="color:#44eebb;font-weight:600;">MEO</td>
-        <td>Orbital period 600–800 min, eccentricity &lt; 0.25</td>
-        <td>GPS, GLONASS, Galileo, BeiDou, MMS, Van Allen Probes</td>
       </tr>
       <tr>
         <td style="color:#ffdd44;font-weight:600;">GEO</td>
@@ -1160,9 +1221,9 @@
         <td>GOES, NOAA GEOSTATIONARY, Inmarsat</td>
       </tr>
       <tr>
-        <td style="color:#ee66ff;font-weight:600;">HEO</td>
-        <td>Eccentricity &gt; 0.25</td>
-        <td>Molniya, Tundra, IBEX, Chandra</td>
+        <td style="color:#44eebb;font-weight:600;">MEO</td>
+        <td>Orbital period 600–800 min, eccentricity &lt; 0.25</td>
+        <td>GPS, GLONASS, Galileo, BeiDou</td>
       </tr>
       <tr>
         <td style="color:#888888;font-weight:600;">OTHER</td>
@@ -1286,8 +1347,8 @@
     <div class="cite">
       <div class="cite-title">International Geomagnetic Reference Field: the fourteenth generation (IGRF-14)</div>
       <div class="cite-authors">
-        Alken, P., Thébault, E., Beggan, C.D., et al. (2021 definitive model; IGRF-14 update 2024).
-        IAGA Division V Working Group V-MOD.
+        IAGA Division V Working Group V-MOD (2024).
+        Released November 2024; valid 1900.0–2030.0.
         Published by NOAA NCEI.
       </div>
       <div class="cite-authors">
@@ -1299,7 +1360,11 @@
           IAGA V-MOD working group
         </a>
       </div>
-      <div class="cite-note">Degree/order 1–13 Gauss coefficients used directly.</div>
+      <div class="cite-note">
+        Degree/order 1–13 Gauss coefficients for all 26 model epochs (1900.0–2025.0)
+        are used directly, linearly interpolated to the simulation date at runtime,
+        with secular-variation extrapolation beyond 2025.
+      </div>
     </div>
 
   </div>
@@ -1314,7 +1379,7 @@
       </div>
       <div class="cite-authors">
         Tsyganenko, N.A. (2002). <em>Journal of Geophysical Research</em>, 107(A8), 1179.
-        <a href="https://doi.org/10.1029/2001JA000486" target="_blank">doi:10.1029/2001JA000486</a>
+        <a href="https://doi.org/10.1029/2001JA000219" target="_blank">doi:10.1029/2001JA000219</a>
       </div>
       <div class="cite-note">T01 model — current implementation. All field-line tracing uses T01.</div>
     </div>
@@ -1364,6 +1429,23 @@
         &amp; Singer, H.J. (1997).
         <em>Journal of Geophysical Research</em>, 102(A5), 9497–9511.
         <a href="https://doi.org/10.1029/97JA00196" target="_blank">doi:10.1029/97JA00196</a>
+      </div>
+    </div>
+
+    <div class="cite">
+      <div class="cite-title">
+        Determining the standoff distance of the bow shock: Mach number dependence
+        and use of models
+      </div>
+      <div class="cite-authors">
+        Farris, M.H., &amp; Russell, C.T. (1994).
+        <em>Journal of Geophysical Research</em>, 99(A9), 17681–17689.
+        <a href="https://doi.org/10.1029/94JA01020" target="_blank">doi:10.1029/94JA01020</a>
+      </div>
+      <div class="cite-note">
+        Bow shock standoff scaling used for the <em>Show Bow Shock</em> surface:
+        standoff distance ≈ 1.36 × the Shue magnetopause standoff, with a slightly
+        more open flaring exponent.
       </div>
     </div>
 
@@ -1444,9 +1526,11 @@
         </a>
       </div>
       <div class="cite-note">
-        Degree-13 spherical harmonic coefficients for the 2025.0 epoch.
-        Pre-processed into <code>public/data/igrf14coeffs.json</code>
-        by <code>scripts/convert-igrf.js</code>.
+        Degree-13 spherical harmonic coefficients for all epochs from 1900.0 to
+        2025.0 in 5-year steps, pre-processed into
+        <code>public/data/igrf/igrf14-all.json</code> by
+        <code>scripts/convert-igrf.js</code> and interpolated to the simulation
+        date at runtime (secular-variation extrapolation beyond 2025).
       </div>
     </div>
 
@@ -1615,7 +1699,7 @@
         <img src="https://img.shields.io/badge/License-CC%20BY%204.0-lightblue.svg"
              alt="License: CC BY 4.0" style="vertical-align: middle;">
       </a>
-      &nbsp; &copy; 2025 Andrew P. E. Collins — licensed under
+      &nbsp; &copy; 2025–2026 Andrew P. E. Collins — licensed under
       <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>.
     </p>
   </footer>
