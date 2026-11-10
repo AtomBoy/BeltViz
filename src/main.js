@@ -3,7 +3,7 @@ import { createGlobe, createSun, createMoon } from './scene/globe.js';
 import { solarPosition, lunarPosition } from './utils/astronomy.js';
 import { setupLighting } from './scene/lighting.js';
 import { setupControls } from './scene/controls.js';
-import { buildFieldLineGroup, createFieldLineMesh, TUBE_SEGMENTS } from './scene/fieldLines.js';
+import { buildFieldLineGroup, createFieldLineMesh, setFieldLineViewport, TUBE_SEGMENTS } from './scene/fieldLines.js';
 import { unpackTracedLines } from './physics/fieldLinePacking.js';
 // fieldLineTracer — generateSeedPoints and traceFieldLine are now called
 // inside src/physics/fieldLineWorker.js (off the main thread).
@@ -138,6 +138,7 @@ const camera = new THREE.PerspectiveCamera(
   500
 );
 camera.position.set(0, 1.5, 4);
+setFieldLineViewport(camera.fov, window.innerHeight);
 
 // --- Scene objects ---
 createGlobe(scene);
@@ -696,6 +697,10 @@ function buildAndRenderBelts() {
 
   const swParamsForBelt = getSolarWindParams();
   const kpForBelt = computeKp(swParamsForBelt);
+  // The storage ring's presence reshapes the outer belt (second slot), so the
+  // geometry is built from the TARGET flux for the current conditions; the
+  // per-frame lerp in animate() only drives colour and the ring's fade-in.
+  const fluxForBelt = computeBeltFlux(kpForBelt, swParamsForBelt?.dst ?? params.dst);
 
   radiationBeltGroup = buildRadiationBeltGroup({
     showInnerBelt: params.showInnerBelt,
@@ -706,10 +711,15 @@ function buildAndRenderBelts() {
     sunDirZ: Math.sin(sunLonRad),
     stormIntensity: Math.min(1, Math.abs(params.dst) / 150),
     kp: kpForBelt,
+    storageFlux: fluxForBelt.storageBeltFlux,
+    colorMode: params.beltColorMode,
+    // The builder tilts the shells to the dipole axis itself; the group root
+    // stays world-aligned because the cut faces live on the world clip planes.
+    dipoleQuaternion: getDipoleQuaternion(),
   });
 
-  radiationBeltGroup.quaternion.copy(getDipoleQuaternion());
   scene.add(radiationBeltGroup);
+  updateBeltFlux(radiationBeltGroup, currentBeltFlux, params.beltOpacity);
 
   // Keep particle mesh in the same tilted frame as the belt geometry.
   applyDipoleTiltToParticles();
@@ -1360,6 +1370,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  setFieldLineViewport(camera.fov, window.innerHeight);
 });
 
 // --- Animation loop ---

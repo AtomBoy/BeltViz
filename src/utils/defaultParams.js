@@ -26,6 +26,7 @@ export const DEFAULT_PARAMS = {
   showInnerBelt: false,
   showOuterBelt: false,
   beltOpacity: 0.85,
+  beltColorMode: 'flux', // 'flux' (rainbow flux map) or 'belt' (per-belt hues)
   // Clipping params
   clipEquatorial: false,
   clipMeridional: false,

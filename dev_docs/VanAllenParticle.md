@@ -18,13 +18,17 @@ Trapped charged particles execute three nested periodic motions. Only the slowes
 |----------|--------------------------|--------------------------|------------------|
 | Gyration | ~ µs–ms                  | ~ µs–ms                  | Around field line |
 | Bounce   | ~ 0.1–10 s               | ~ 1–10 s                 | N–S along field line |
-| Drift    | ~ 1–60 min (E-dependent) | ~ 30 min – 10 h          | Azimuthal around Earth |
+| Drift    | ~ 1–60 min (E-dependent) | ~ 20 s (30 MeV) – 2 h (100 keV) | Azimuthal around Earth |
 
 **Gyration** is too fast to animate (and the gyro-radius is sub-kilometre at MeV energies).
 
 **Bounce** is shown as a *static spread* in magnetic latitude λ_m up to the mirror point.
-Each particle is placed at a fixed λ_m chosen at injection; it does not oscillate. The
-visual result correctly shows particles distributed along field lines in the belt, not
+Each particle is placed at a fixed λ_m chosen at injection; it does not oscillate. For belt
+populations (inner protons/electrons, outer electrons) λ_m is capped at 0.9 × the latitude where
+the belt's quiet-time **halo iso-flux contour** (flux level 0.12 of `beltProfile.js`) crosses the
+particle's L (`beltConfinedLambdaMax(L, beltName)`), so particles stay inside the rendered belt.
+Ring-current protons are deliberately uncapped, and storm-time slot-filling injections below the
+outer belt's halo inner edge (L < 2.6) bypass the cap. The visual result correctly shows particles distributed along field lines in the belt, not
 crowded at the equator.
 
 **Drift** is the primary animation. Electrons drift *eastward* (counterclockwise viewed
@@ -34,31 +38,46 @@ from north pole); protons drift *westward* (clockwise). This produces the ring c
 
 ## Drift Formulas
 
-### Bounce-averaged azimuthal drift period (dipole field)
+### Azimuthal drift period (dipole field)
 
-For an isotropic pitch-angle distribution (equivalent to 90° equatorial pitch angle):
+Gradient-curvature drift of an equatorially mirroring particle:
 
 ```
-T_electron [hours] ≈ 1.05 / (L × E_k [MeV])   (eastward)   → ~16 min at L=4, 1 MeV
-T_proton   [hours] ≈ 58.0 / (L × E_k [MeV])   (westward)   → ~29 min at L=4, 30 MeV
+T_d = 4π · q · B0 · Re² / (3 · L · γβ²·mc²)       γβ²·mc² = E (E + 2mc²) / (E + mc²)
 ```
 
-*Reference: Roederer (1970), "Dynamics of Geomagnetically Trapped Radiation", §3.4;
-Schulz & Lanzerotti (1974), "Particle Diffusion in the Radiation Belts", eq. 1.30.*
+with B0 = 3.0e-5 T and Re = 6371.2 km (`DRIFT_PERIOD_CONST_MEV_S` ≈ 5.1e3 MeV·s). The period depends
+on species only through the relativistic factor: in the non-relativistic limit
+`T_d ≈ 44 min / (L × E_k[MeV])` for **either** protons or electrons, so at the same kinetic energy
+they drift at nearly the same speed in opposite directions. Particles mirroring off the equator drift
+up to ~1.4× more slowly (not modelled).
 
-Angular drift rate: `ω = ±2π / (T × 3600)` rad/s  (T in hours).
+Examples (`driftPeriodSeconds(L, E, species)` in `particleDrift.js`):
+
+- 1 MeV electron at L=4: ~16 min (eastward)
+- 30 MeV proton at L=1.5: ~1 min (westward)
+- 100 keV ring-current proton at L=4: ~1.8 h (westward)
+
+*References: Schulz & Lanzerotti (1974), "Particle Diffusion in the Radiation Belts";
+Walt (1994), "Introduction to Geomagnetically Trapped Radiation"; Roederer (1970).*
+
+Angular drift rate: `ω = ±2π / T_d` rad/s (`driftRate()`).
 
 ### Visual time scale
 
-Physics drift rates are in rad/s. A `VISUAL_DRIFT_SCALE = 6.3` multiplier is
-applied so that electrons at L=4, E=1 MeV complete one orbit in **~2.5 real minutes**
-(physics period ~16 min, accelerated ~6× for visibility). This lets the drift be
-clearly visible while still allowing individual particles to be tracked.
+Physics drift rates are in rad/s. A single `VISUAL_DRIFT_SCALE = 6.3` multiplier is
+applied to **every** population so that electrons at L=4, E=1 MeV complete one orbit in **~2.5 real minutes**
+(physics period ~16 min, accelerated ~6× for visibility). Because one scale is shared, relative
+drift speeds stay physical.
 
-All other drift rates scale correctly relative to the reference case:
-- L=8, E=1 MeV electrons: ~1.3 min orbit (2× as fast, since ω ∝ L).
-- L=4, E=3 MeV electrons: ~50 sec orbit (3× as fast, since ω ∝ E).
-- L=4, E=30 MeV protons:  ~4.6 min orbit (opposite direction).
+Representative energies: CRAND protons 30 MeV, inner-belt electrons 1 MeV, outer-belt electrons
+set by the GUI energy slider, ring-current protons 0.1 MeV (100 keV).
+
+- L=8, E=1 MeV electrons: ~1.3 min orbit (about 2× as fast, since ω ∝ L).
+- L=4, E=3 MeV electrons: ~1 min orbit (about 2.6× as fast; slightly less than ∝E because of relativistic mass).
+- L=1.5, E=30 MeV protons (CRAND): ~9 s orbit on screen (~1 min physical), westward. These
+  visibly race around the inner belt, much faster than the inner-belt electrons.
+- L=4, E=0.1 MeV protons (ring current): ~1.8 h physical, ~17 min on screen — nearly stationary.
 
 ---
 
@@ -145,7 +164,8 @@ Aurora opacity is driven by Dst through `auroraRenderer.update()`:
 
 | File | Purpose |
 |------|---------|
-| `src/physics/particleDrift.js` | Pure physics: drift rate, position, loss cone, injection |
+| `src/physics/particleDrift.js` | Pure physics: drift period/rate, position, loss cone, injection, belt latitude cap |
+| `src/physics/beltProfile.js` | Belt flux-shape model; halo iso-flux contour used for particle latitude cap |
 | `src/scene/particleSystem.js` | THREE.Points with ShaderMaterial; injection/loss/drift loop |
 | `src/scene/auroraRenderer.js` | Aurora torus geometry with animated curtain shader |
 | `tests/particleDrift.test.js` | Unit tests for all physics functions |
@@ -186,7 +206,7 @@ Particles use `THREE.Points` with a custom `ShaderMaterial`:
 
 | Parameter | Location | Effect |
 |-----------|----------|--------|
-| `VISUAL_DRIFT_SCALE` | `particleSystem.js` | Orbit period at reference case (currently ~10 s) |
+| `VISUAL_DRIFT_SCALE` | `particleSystem.js` | Visual speed-up of all drift rates (currently 6.3: 1 MeV electron at L=4 orbits in ~2.5 min) |
 | `BASE_INJECT_RATE` | `particleSystem.js` | Quiet-time particles per second (currently 4) |
 | `realLifetime(L)` | `particleSystem.js` | Particle longevity in real seconds |
 | `TUBE_RADIUS` | `auroraRenderer.js` | Aurora band thickness (currently 0.03 Re ≈ 190 km) |

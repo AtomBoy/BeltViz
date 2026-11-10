@@ -29,11 +29,11 @@
 const PROTON_MASS_KG = 1.6726e-27;
 
 /**
- * Solar wind dynamic pressure (nPa).
+ * Solar wind dynamic pressure rho*v^2 (nPa).
  * Duplicated inline to avoid import coupling; identical formula as solarWind.js.
  */
 function dynamicPressure(vSw, nSw) {
-  return 0.5 * (nSw * 1e6) * PROTON_MASS_KG * (vSw * 1e3) ** 2 * 1e9;
+  return (nSw * 1e6) * PROTON_MASS_KG * (vSw * 1e3) ** 2 * 1e9;
 }
 
 /**

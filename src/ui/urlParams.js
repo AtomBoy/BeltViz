@@ -31,6 +31,7 @@ export const DEFAULTS = {
   showInnerBelt:       false,
   showOuterBelt:       false,
   beltOpacity:         0.85,
+  beltColorMode:       'flux',
   clipEquatorial:      false,
   clipMeridional:      false,
   clipMeridionalAngle: 0,
@@ -107,6 +108,7 @@ export function parseHashString(hash) {
   if (sp.has('innerBelt'))   out.showInnerBelt  = bool('innerBelt');
   if (sp.has('outerBelt'))   out.showOuterBelt  = bool('outerBelt');
   if (sp.has('beltOpacity')) { const v = num('beltOpacity'); if (v !== null) out.beltOpacity  = v; }
+  if (sp.has('beltColors'))  { const v = str('beltColors'); if (v === 'flux' || v === 'belt') out.beltColorMode = v; }
 
   // Clipping
   if (sp.has('clipEq'))      out.clipEquatorial      = bool('clipEq');
@@ -247,6 +249,7 @@ export function buildHashString(params, cameraPos = null) {
   set('innerBelt',   params.showInnerBelt, d.showInnerBelt);
   set('outerBelt',   params.showOuterBelt, d.showOuterBelt);
   set('beltOpacity', params.beltOpacity,   d.beltOpacity);
+  set('beltColors',  params.beltColorMode, d.beltColorMode);
 
   // Clipping
   set('clipEq',    params.clipEquatorial,      d.clipEquatorial);

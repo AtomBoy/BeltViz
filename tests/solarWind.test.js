@@ -21,10 +21,12 @@ const stormParams = {
 };
 
 describe('computeDynamicPressure', () => {
-  it('returns reasonable pressure for typical solar wind', () => {
-    const Dp = computeDynamicPressure(400, 5);
-    expect(Dp).toBeGreaterThan(0.5);
-    expect(Dp).toBeLessThan(3);
+  it('is the ram pressure rho*v^2 (no factor of 1/2)', () => {
+    // n m_p v^2 = 5e6 m^-3 x 1.6726e-27 kg x (4e5 m/s)^2 = 1.338 nPa.
+    // Shue et al. (1998) and T01 are both fitted to this definition.
+    expect(computeDynamicPressure(400, 5)).toBeCloseTo(1.338, 3);
+    // Common shorthand: Pdyn [nPa] = 1.6726e-6 * n [cm^-3] * v^2 [km/s]
+    expect(computeDynamicPressure(500, 10)).toBeCloseTo(1.6726e-6 * 10 * 500 * 500, 3);
   });
 
   it('increases with speed squared', () => {
@@ -44,8 +46,14 @@ describe('computeStandoffDistance', () => {
   it('returns ~10-11 Re for quiet conditions', () => {
     const Dp = computeDynamicPressure(400, 5);
     const r0 = computeStandoffDistance(Dp, 0);
-    expect(r0).toBeGreaterThan(9.5);
-    expect(r0).toBeLessThan(13);
+    expect(r0).toBeGreaterThan(10.4);
+    expect(r0).toBeLessThan(11.4);
+  });
+
+  it('presets give the textbook standoff distances (Shue 1998)', () => {
+    expect(computeStandoffDistance(computeDynamicPressure(400, 5), 0)).toBeCloseTo(10.9, 1);
+    expect(computeStandoffDistance(computeDynamicPressure(500, 10), -5)).toBeCloseTo(8.8, 1);
+    expect(computeStandoffDistance(computeDynamicPressure(700, 20), -15)).toBeCloseTo(6.0, 1);
   });
 
   it('decreases during storms (higher pressure, southward Bz)', () => {

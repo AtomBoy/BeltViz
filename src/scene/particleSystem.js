@@ -19,13 +19,14 @@
  *   (A) Inner belt protons (L = 1.3–1.9) — CRAND source:
  *     Cosmic Ray Albedo Neutron Decay: galactic cosmic rays hit the upper
  *     atmosphere → neutrons → decay to protons in flight. Source is constant,
- *     azimuthally uniform, and independent of solar wind. Drift WESTWARD.
+ *     azimuthally uniform, and independent of solar wind. Drift WESTWARD,
+ *     fast: at 30 MeV one circuit takes about a minute of real time.
  *     Long-lived (300–600 s visual). Orange.
  *
  *   (B) Inner belt electrons (L = 1.5–1.9) — inward diffusion:
  *     Electrons diffuse inward from the outer belt and accumulate in the outer
  *     portion of the inner belt. Constant slow trickle, azimuthally uniform.
- *     Drift EASTWARD — visibly faster than the colocated protons.
+ *     Drift EASTWARD — much more slowly than the colocated 30 MeV protons.
  *     Moderate lifetime (~120 s visual). Blue.
  *     Combined with (A), the inner belt appears warm-white from additive mixing.
  *
@@ -36,8 +37,8 @@
  *   (D) Ring current protons (L = 1.5–4.5) — storm injection:
  *     Protons injected alongside electrons from the nightside plasma sheet.
  *     The ring current (which CAUSES the Dst depression we measure) is primarily
- *     carried by these 10–300 keV protons. Representative energy 10 MeV used
- *     for visual drift rates. Nightside injection, Dst-driven. Drift WESTWARD.
+ *     carried by these 10–300 keV protons (100 keV used here). Nightside
+ *     injection, Dst-driven. Drift WESTWARD, slowly (hours per circuit).
  *     Moderate lifetime (~35–45 s). Orange.
  *
  *   Slot region (L = 2.0–3.0) is normally empty of ELECTRONS. Protons can
@@ -57,21 +58,25 @@ import {
   innerBeltElectronRate, innerBeltElectronLRange, ringCurrentLRange,
   computeBudgets, BASE_INJECT_RATE, BASE_RING_CURRENT_RATE,
 } from '../physics/particleDrift.js';
-import { BELT_DEFINITIONS } from './radiationBelts.js';
+import { BELT_PROFILES } from '../physics/beltProfile.js';
 
 // Belt core mesh boundaries — used to confine belt populations (A, B, C) inside
 // the rendered belt geometry. Ring current protons (D) are deliberately NOT
 // confined: the ring current is a physically distinct population that occupies
 // the slot region and is not part of either radiation belt.
-const INNER_BELT_DEF = BELT_DEFINITIONS.find((d) => d.name === 'innerBelt');
-const OUTER_BELT_DEF = BELT_DEFINITIONS.find((d) => d.name === 'outerBelt');
+// Below this L an outer-belt injection is outside the rendered outer belt
+// altogether (storm-time slot filling).
+const OUTER_BELT_HALO_MIN = BELT_PROFILES.outerBelt.haloMin;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_PARTICLES = 2000;
 
-// Physics: L=4, E=1 MeV electron drift period = 1.05/(4×1) h ≈ 945 s.
-// Visual target: ~2.5 min per orbit → scale = 945 / 150 = 6.3
+// Physics: L=4, E=1 MeV electron drift period ≈ 950 s (driftPeriodSeconds).
+// Visual target: ~2.5 min per orbit → scale = 950 / 150 ≈ 6.3.
+// One scale for every population, so relative drift speeds stay physical:
+// 30 MeV inner-belt protons circle in ~1 min real (≈ 9 s on screen), far
+// faster than the MeV electrons; 100 keV ring-current protons take ~2 h real.
 const VISUAL_DRIFT_SCALE = 6.3;
 
 // On first enable, inject these fractions of maxCount immediately.
@@ -93,13 +98,11 @@ const SLOT_DST_THRESHOLD = -100; // nT — slot fills with electrons below this 
 // Representative energies for each population.
 // CRAND protons: 30 MeV (high-energy inner belt protons from cosmic-ray cascade).
 // Inner electrons: 1 MeV (similar to outer belt electrons — diffuse inward without energy loss).
-// Ring current protons: 10 MeV representative for visual drift rates.
-//   (Real ring current protons are 10–300 keV — too low-energy to drift perceptibly
-//    at these visual scales, so we use a higher representative energy that preserves
-//    the qualitative physics: protons drift westward, more slowly than electrons.)
+// Ring current protons: 100 keV, in the middle of the real 10–300 keV range.
+//   At that energy they drift westward far more slowly than the MeV electrons.
 const CRAND_PROTON_ENERGY_MEV        = 30;
 const INNER_ELECTRON_ENERGY_MEV      = 1.0;
-const RING_CURRENT_PROTON_ENERGY_MEV = 10;
+const RING_CURRENT_PROTON_ENERGY_MEV = 0.1;
 
 // Visual lifetime for inner belt electrons and ring current protons.
 // Inner electrons: moderate (longer than outer electrons, shorter than CRAND protons).
@@ -224,8 +227,8 @@ export function createParticleSystem(scene) {
    */
   function placeParticle(slot, L, phi, speciesCode, energyMeV, lifetime, col, pop, lambdaCap = Infinity) {
     // Physical bounce spread (0.35 factor keeps particles near the equatorial
-    // plane), further capped by the belt mesh taper so particles don't poke
-    // out of the tapered belt tips at high L.
+    // plane), further capped by the belt's halo contour so particles don't
+    // poke out of the rendered belt near its inner and outer edges.
     const maxLambda = Math.min(
       Math.acos(Math.sqrt(1 / Math.max(L, 1))) * 0.35,
       0.9 * lambdaCap,
@@ -264,7 +267,7 @@ export function createParticleSystem(scene) {
     const { lMin, lMax } = innerBeltLRange();
     const L   = lMin + Math.random() * (lMax - lMin);
     const phi = Math.random() * Math.PI * 2; // uniform — CRAND is azimuthally symmetric
-    const cap = beltConfinedLambdaMax(L, INNER_BELT_DEF.lMin, INNER_BELT_DEF.lMax, INNER_BELT_DEF.latLimit);
+    const cap = beltConfinedLambdaMax(L, 'innerBelt');
     placeParticle(slot, L, phi, PROTON, CRAND_PROTON_ENERGY_MEV, innerBeltLifetime(L), COL_PROTON, 0, cap);
   }
 
@@ -276,7 +279,7 @@ export function createParticleSystem(scene) {
     const { lMin, lMax } = innerBeltElectronLRange();
     const L   = lMin + Math.random() * (lMax - lMin);
     const phi = Math.random() * Math.PI * 2; // uniform — diffusion is azimuthally symmetric
-    const cap = beltConfinedLambdaMax(L, INNER_BELT_DEF.lMin, INNER_BELT_DEF.lMax, INNER_BELT_DEF.latLimit);
+    const cap = beltConfinedLambdaMax(L, 'innerBelt');
     placeParticle(slot, L, phi, ELECTRON, INNER_ELECTRON_ENERGY_MEV, INNER_ELECTRON_LIFETIME, COL_ELECTRON, 1, cap);
   }
 
@@ -295,12 +298,12 @@ export function createParticleSystem(scene) {
 
     // Nightside injection (anti-solar direction ± 90°).
     const phi = (Math.PI - sunLonRad) + (Math.random() - 0.5) * Math.PI;
-    // Confine to the outer belt mesh contour. Storm-time injections below the
-    // mesh's lMin (slot filling) are intentionally outside the rendered belt
-    // and keep the unconfined physical spread.
-    const cap = L < OUTER_BELT_DEF.lMin
+    // Confine to the rendered outer belt. Storm-time injections below its
+    // inner halo edge (slot filling) are intentionally outside the rendered
+    // belt and keep the unconfined physical spread.
+    const cap = L < OUTER_BELT_HALO_MIN
       ? Infinity
-      : beltConfinedLambdaMax(L, OUTER_BELT_DEF.lMin, OUTER_BELT_DEF.lMax, OUTER_BELT_DEF.latLimit);
+      : beltConfinedLambdaMax(L, 'outerBelt');
     placeParticle(slot, L, phi, ELECTRON, energyMeV, outerBeltRealLifetime(L), COL_ELECTRON, 2, cap);
   }
 

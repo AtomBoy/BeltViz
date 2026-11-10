@@ -22,6 +22,74 @@ const RATIO_MODE_THRESHOLD = 2; // bMag > 2 nT → total-B mode (ratio can't exc
 const TOT_LOG_MIN = 1;    // log10(10)
 const TOT_LOG_MAX = 4.78; // log10(60 000)
 
+/**
+ * CatmullRom curve that TubeGeometry samples uniformly in KNOT INDEX rather
+ * than in arc length.
+ *
+ * The tracer's step is adaptive (100 km near Earth, up to 800 km in the far
+ * tail), and the knots are an index-uniform subset of the traced points, so
+ * index-uniform sampling puts tube segments where the line actually curves.
+ * Arc-length sampling (the TubeGeometry default) would spend almost all of a
+ * 200 Re tail line's segments on the straight tail and leave the near-Earth
+ * arc visibly faceted.
+ *
+ * It also keeps vertex colours aligned: applyVertexColors() maps tube
+ * segment → knot index linearly, which is exact under this sampling.
+ */
+class IndexSampledCurve extends THREE.CatmullRomCurve3 {
+  getPointAt(u, target) {
+    return this.getPoint(u, target);
+  }
+  getTangentAt(u, target) {
+    return this.getTangent(u, target);
+  }
+}
+
+// ── Minimum on-screen width ─────────────────────────────────────────────────
+//
+// Tubes are 0.008 Re thick by default. Zoomed out far enough to frame a field
+// line that runs ~100 Re down the tail, that is a small fraction of a pixel and
+// the line all but disappears. The vertex shader therefore pushes each tube
+// vertex outward along its normal (which for a tube points radially away from
+// the centreline) until the tube is at least MIN_LINE_RADIUS_PX wide on screen.
+// Up close, where the tube is already wider than that, nothing changes.
+
+const MIN_LINE_RADIUS_PX = 0.6;
+
+// World units per CSS pixel at unit view distance — shared by all field line
+// materials; updated by setFieldLineViewport().
+const pxWorldUniform = { value: 0 };
+
+/**
+ * Tell the field line materials about the camera/viewport so they can keep a
+ * minimum on-screen width. Call at start-up and whenever the viewport resizes.
+ * @param {number} fovDeg - camera vertical field of view in degrees
+ * @param {number} viewportHeightPx - viewport height in CSS pixels
+ */
+export function setFieldLineViewport(fovDeg, viewportHeightPx) {
+  pxWorldUniform.value = viewportHeightPx > 0
+    ? (2 * Math.tan((fovDeg * Math.PI) / 360)) / viewportHeightPx
+    : 0;
+}
+
+function applyMinScreenWidth(material, radius) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uPxWorld = pxWorldUniform;
+    shader.uniforms.uTubeRadius = { value: radius };
+    shader.vertexShader =
+      'uniform float uPxWorld;\nuniform float uTubeRadius;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          float viewDist = length((modelViewMatrix * vec4(position, 1.0)).xyz);
+          float minRadius = viewDist * uPxWorld * ${MIN_LINE_RADIUS_PX.toFixed(2)};
+          transformed += normalize(normal) * max(0.0, minRadius - uTubeRadius);
+        }`,
+      );
+  };
+}
+
 function bMagToColor(bMag, isRatioMode) {
   let t;
   if (isRatioMode) {
@@ -110,7 +178,7 @@ export function createFieldLineMesh(points, options = {}) {
     if (bMags) bMags[i] = mag ?? 0;
   }
 
-  const curve = new THREE.CatmullRomCurve3(vectors);
+  const curve = new IndexSampledCurve(vectors);
   const geometry = new THREE.TubeGeometry(
     curve,
     tubularSegments,
@@ -145,6 +213,8 @@ export function createFieldLineMesh(points, options = {}) {
         transparent: true,
         opacity: 0.85,
       });
+
+  applyMinScreenWidth(material, radius);
 
   return new THREE.Mesh(geometry, material);
 }

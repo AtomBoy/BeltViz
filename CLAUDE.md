@@ -61,7 +61,7 @@ igrf14coeffs.json → computeB(r,θ,φ) → traceFieldLine() → buildFieldLineG
 ```
 
 1. `src/physics/igrf.js:computeB()` evaluates the spherical harmonic expansion to get B field vector at any point. Uses `legendre.js` for Schmidt semi-normalized associated Legendre polynomials.
-2. `src/physics/fieldLineTracer.js:traceFieldLine()` does RK4 integration in Cartesian coordinates, tracing both directions from a seed point until hitting Earth's surface or escaping beyond 12 Re.
+2. `src/physics/fieldLineTracer.js:traceFieldLine()` does RK4 integration in Cartesian coordinates, tracing both directions from a seed point until hitting Earth's surface or fading out beyond the magnetopause (typically within ~100 Re); `DEFAULT_RMAX_RE = 120` is only a safety limit.
 3. `src/scene/fieldLines.js:buildFieldLineGroup()` converts km-space point arrays to Three.js TubeGeometry meshes with CatmullRomCurve3 smoothing.
 4. `src/main.js` orchestrates everything: loads coefficients, generates seed points, traces lines, builds meshes, runs the render loop.
 
@@ -69,7 +69,8 @@ igrf14coeffs.json → computeB(r,θ,φ) → traceFieldLine() → buildFieldLineG
 
 - Legendre polynomials clamp theta to [1e-10, pi-1e-10] to avoid pole singularities
 - `computeB` accepts a `maxDegree` parameter (1-13) to control spherical harmonic truncation. Degree 1 = pure dipole. The UI exposes this as a slider.
-- Field line tracer uses 200 km step size, bidirectional tracing (positive and negative ds), terminates at r < 0.99*Re or r > 12*Re
+- Field line tracer uses a 100 km base step with an adaptive size: unchanged inside 25 Re (sqrt(r/2Re) curve capped at 4x base), linear growth beyond 25 Re capped at 14x. Bidirectional tracing (positive and negative ds); terminates at r < 0.99*Re, where the field fades outside the magnetopause, or at the 120 Re safety limit (`DEFAULT_RMAX_RE`). T01 is fitted to roughly X >= -15 Re, so the far tail is an extrapolation. Trace time rose roughly 35-60% at default settings vs. the old 25 Re cutoff.
+- `src/scene/fieldLines.js` samples tubes by traced-point index (`IndexSampledCurve`, a CatmullRomCurve3 subclass) rather than arc length, and enforces a minimum on-screen tube width (`setFieldLineViewport` / `applyMinScreenWidth`). `OrbitControls.maxDistance` is 200 (`src/scene/controls.js`).
 - Seed points are placed at configurable magnetic latitudes in the northern hemisphere only; the tracer follows lines to the southern hemisphere automatically
 
 ### Rebuilding visualizations
@@ -90,32 +91,34 @@ coeffs → scalarFieldWorker (Web Worker) → Float32Array grid → marchingCube
 
 ### Radiation belt visualization
 
-Belt meshes are **analytic dipole toroids** built in `src/scene/radiationBelts.js` — no marching cubes. Each belt's cross-section is a **rounded iso-flux contour**: an ellipse in (L, λ_m) space (`L(t)=L_mid+L_half·cos t`, `λ(t)=latLimit·sin t`) mapped through the dipole field-line geometry (`ρ=L·cos³λ`, `y=L·cos²λ·sinλ`) and revolved azimuthally. `nLat=80` profile points, `nAz=120` segments. The meshes depict each belt's **high-flux core** (AP8/AE8 peak region, Vette 1991), not the maximum trapping envelope. Definitions (`BELT_DEFINITIONS`): inner belt L=1.3–1.9 ±35°; outer belt L=3.0–4.8 ±22° (outer edge expands toward ~5.6 at high Kp, Ganushkina 2011); **storage (3rd) belt L=3.0–3.5 ±18°** (violet ring between the belts, appears only during storms — the Baker 2013 / Shprits 2013 storage ring).
+Belts are rendered from an **analytic relative-flux shape model**, not marching cubes. `src/physics/beltProfile.js` (pure physics) defines `f(L, λ) = g(L) · h(λ)^k · a(r)`: `g` is a generalised Gaussian around the peak with separate inner/outer widths, `h = B_eq/B = cos⁶λ/√(4−3cos²λ)` (dipole field-line fall-off), `a` is an atmospheric cutoff (smoothstep between r = 1.02 and 1.12 Re). `BELT_PROFILES` gives per belt `lPeak/coreMin/coreMax/haloMin/haloMax/coreLat`: inner 1.5 / 1.3–1.9 / 1.12–2.3 / 35°; outer 4.0 / 3.0–4.8 / 2.6–6.0 / 22°; storage 3.25 / 3.0–3.5 / 2.85–3.65 / 18°. `FLUX_LEVELS`: halo 0.12, core 0.5, peak 0.8. The cores depict each belt's **high-flux core** (AE8/AP8 peak region, Vette 1991 / Sawyer & Vette 1976), not the maximum trapping envelope; the halo is the outer rendered limit. `resolveBeltProfile(name, {kp, storageFlux})` applies the Kp expansion of the outer belt's outer edge (up to +0.8 Re at Kp>=7, Ganushkina 2011) and, when the storage ring is present, moves the outer belt's inner edge outward (core 3.0 -> 3.9, peak 4.0 -> 4.5) to open a second slot. The shape model is for rendering and particle placement; absolute intensity comes from `beltFlux.js`.
 
-**Storm deformation**: outer **and storage** belts. `applyStormDeformation()` scales each vertex radially by `1 − stormIntensity × 0.22 × cos(φ − sunLon)`. `stormIntensity = min(1, |Dst| / 150)`. Inner belt (CRAND protons) is stable and does not deform; the storage belt shares the same radial scale so the gap between it and the storm-stretched outer belt is preserved.
+`src/scene/radiationBelts.js` renders each belt as **three nested iso-flux shells** (halo/core/peak): unlit `ShaderMaterial` with view-dependent rim opacity; the peak shell is drawn opaque with depth write when solid. On each active clipping plane a **cut face** quad is added whose fragment shader evaluates the same flux model in GLSL and colour-maps it, so clipped belts show a filled NASA-style cross-section (cf. NASA SVS 30470). Colour modes via `params.beltColorMode` (GUI dropdown "Colors", URL key `beltColors`): `'flux'` (default, one rainbow colormap shared by all belts) and `'belt'` (per-belt hues red/teal/violet). The storage (3rd) belt appears only during storms (`storageBeltFlux > 0`).
 
-**Dipole tilt**: both `radiationBeltGroup` and `particleSystem.mesh` are rotated by `getDipoleQuaternion()`. The axis is `new THREE.Vector3(-g11, -g10, -h11).normalize()` from IGRF degree-1 coefficients — pointing toward **magnetic north** (~10° from geographic +Y). Using the un-negated vector `(g11, g10, h11)` would point to magnetic south (~170° rotation from +Y), causing `setFromUnitVectors(Y, near-Y-neg)` to choose an ill-conditioned azimuthal rotation axis, producing a wrong ~90° CCW offset in the belt tilt.
+**Storm deformation**: outer **and storage** belts. `applyStormDeformation()` scales each vertex radially by `1 − stormIntensity × 0.22 × cos(φ − sunLon)` (`STORM_MAX_DEFORM = 0.22`; the cut-face shader inverts this mapping). `stormIntensity = min(1, |Dst| / 150)`. Inner belt (CRAND protons) is stable and does not deform; the storage belt shares the same radial scale so the gap between it and the storm-stretched outer belt is preserved.
 
-**Material**: `MeshPhysicalMaterial`, `roughness: 0.55`, `emissiveIntensity: 0.15` (enough for nightside visibility without washing out directional lighting). `updateBeltFlux()` modulates opacity and emissive per frame from `computeBeltFlux(kp, dst)` output.
+**Dipole tilt**: the belt shells and `particleSystem.mesh` are rotated by `getDipoleQuaternion()`. For belts, `buildRadiationBeltGroup({ dipoleQuaternion, storageFlux, colorMode, ... })` applies the quaternion to its internal shells subgroup; cut faces are world-aligned, so the returned group root is world-aligned and `main.js` no longer sets `radiationBeltGroup.quaternion`. The axis is `new THREE.Vector3(-g11, -g10, -h11).normalize()` from IGRF degree-1 coefficients — pointing toward **magnetic north** (~10° from geographic +Y). Using the un-negated vector `(g11, g10, h11)` would point to magnetic south (~170° rotation from +Y), causing `setFromUnitVectors(Y, near-Y-neg)` to choose an ill-conditioned azimuthal rotation axis, producing a wrong ~90° CCW offset in the belt tilt.
+
+**Colour/flux**: `updateBeltFlux()` drives colour gain (higher flux moves colours up the colormap) and the storage ring's fade-in per frame from `computeBeltFlux(kp, dst)` output; there is no `MeshPhysicalMaterial`/emissive path any more.
 
 The Worker also computes L-shell grids (`computeLShellGrid`) using the dipole L-shell approximation. Marching cubes extracts paired isosurfaces at L-shell boundaries rendered as colored semi-transparent shells. The L-shell isosurfaces are also tilted by the dipole quaternion.
 
 ### Solar wind external field (Phase 3)
 
-Adds external magnetic field from solar wind interaction using the **Tsyganenko T89c** empirical model, producing the classic asymmetric magnetosphere (compressed dayside, stretched nightside tail).
+Adds external magnetic field from solar wind interaction using the **Tsyganenko T01** (2002) empirical model, producing the classic asymmetric magnetosphere (compressed dayside, stretched nightside tail).
 
 ```
-computeB (IGRF internal) + computeExternalB (T89c) → computeTotalB → field lines, grids, environment
+computeB (IGRF internal) + computeExternalB (T01) → computeTotalB → field lines, grids, environment
                                                         via insideMagnetopause fade
 ```
 
-- `src/physics/t89.js` — JavaScript port of the T89c model (Tsyganenko 1989). Takes GSM position in Earth radii + Kp level (iopt 1–7) + dipole tilt (ps), returns `[bx,by,bz]` nT. 30-coefficient × 7-Kp parameter matrix. Ported from Python geopack (https://github.com/tsssss/geopack).
-- `src/physics/solarWind.js` — Calls T89c for external field. Also contains: `solarWindToKp()` (maps dst/vSw/nSw → iopt 1–7), Shue 1998 magnetopause (`computeMagnetopauseDistance`), GSM transforms (`toGSM`/`fromGSM`), and `insideMagnetopause()` boundary fade. Pure physics, no DOM.
+- `src/physics/t01.js` — JavaScript port of the Tsyganenko T01 (2002) model, ported from Python geopack (https://github.com/tsssss/geopack). `t01(parmod, ps, x, y, z)` takes GSM position in Earth radii and returns `[bx,by,bz]` nT, with `parmod = [pdyn(nPa), dst(nT), byimf(nT), bzimf(nT), g1, g2, 0,0,0,0]`. `src/physics/t89.js` (T89c, Kp-indexed) is a legacy module kept for reference and tests.
+- `src/physics/solarWind.js` — `computeExternalB()` calls T01 for the external field. Also contains: `solarWindToKp()` (maps dst/vSw/nSw → iopt 1–7), Shue 1998 magnetopause (`computeMagnetopauseDistance`), GSM transforms (`toGSM`/`fromGSM`), and `insideMagnetopause()` boundary fade. Pure physics, no DOM.
 - `src/physics/totalField.js` — Thin wrapper: `computeTotalB(r,θ,φ,coeffs,maxDegree,solarWindParams)` returns IGRF+external combined, confined by magnetopause. Falls back to pure IGRF when `solarWindParams` is null/disabled.
 - `src/physics/coordinates.js` — Added `bCartesianToSpherical()` inverse transform for converting Cartesian B vectors back to spherical components.
 - `src/scene/magnetopauseMesh.js` — Parametric surface mesh of the Shue magnetopause boundary, lazy-loaded via dynamic import.
 
-The `solarWindParams` object (`{ vSw, nSw, imfBz, dst, sunLonRad, ps, enabled }`) threads through: `fieldLineTracer` (via `options.solarWindParams`), `magneticEnvironment` (6th parameter). Field lines and the magnetopause mesh show solar wind asymmetry. `ps` is the dipole tilt angle (radians), approximated from solar declination.
+The `solarWindParams` object (`{ vSw, nSw, imfBy, imfBz, dst, g1, g2, sunLonRad, ps, enabled }`) threads through: `fieldLineTracer` (via `options.solarWindParams`), `magneticEnvironment` (6th parameter). Field lines and the magnetopause mesh show solar wind asymmetry. `ps` is the dipole tilt angle (radians), approximated from solar declination.
 
 **Important**: Scalar field grids (L-shell, |B|) always use pure IGRF — the dipole L-shell approximation (`L = r/(Re*cos²λ_m)`) breaks down with external fields, producing artifacts at the tail current neutral sheet and magnetopause boundary. This is a known limitation of McIlwain L in disturbed fields (Roederer & Lejosne 2018). The correct fix requires Roederer L* (drift shell tracing) or full Tsyganenko model — both deferred.
 
@@ -130,11 +133,13 @@ Storm presets: Quiet (v=400, n=5, Bz=0, Dst=0), Moderate Storm (v=500, n=10, Bz=
 | A | CRAND | Proton | Cosmic ray neutron decay, constant | 1.3–1.9 | 300–600 s |
 | B | InnerElec | Electron | Inward radial diffusion, constant | 1.5–1.9 | 120 s |
 | C | OuterElec | Electron | Nightside injection, Dst-driven | 3.0–4.5 | 25–45 s |
-| D | RingCurrent | Proton | Nightside injection, Dst-driven | 1.5–4.5 | 35–45 s |
+| D | RingCurrent | Proton (0.1 MeV) | Nightside injection, Dst-driven | 1.5–4.5 | 35–45 s |
 
 Budgets use **Little's Law** (N_steady = rate × τ) to split the `maxCount` pool proportionally each frame. Inner belt (A, B) are azimuthally uniform; outer belt (C, D) inject from the nightside (anti-solar ± 90°).
 
-**Particle placement**: `maxLambda = acos(sqrt(1/L)) * 0.35`. The `0.35` factor keeps particles near the magnetic equatorial plane. Using 0.65 sends particles to high latitudes where their equatorial projection (r·cos²λ) falls inside Earth when viewed from the pole.
+**Drift**: `driftPeriodSeconds(L, E, species) = 4π·q·B0·Re² / (3·L·γβ²mc²)` with `γβ²mc² = E(E+2mc²)/(E+mc²)` (`particleDrift.js`); non-relativistic limit ≈ 44 min/(L·E[MeV]) for either species. Examples: 1 MeV electron at L=4 ≈ 16 min; 30 MeV proton at L=1.5 ≈ 1 min; 100 keV proton at L=4 ≈ 1.8 h. Energies: CRAND 30 MeV, inner electrons 1 MeV, ring current 0.1 MeV (was a 'representative' 10 MeV; the old 58/(L·E) h proton constant was ~80x too slow). `VISUAL_DRIFT_SCALE = 6.3` applies to all populations, so CRAND protons visibly race westward (~9 s per orbit on screen) while inner-belt electrons and ring-current protons are slow.
+
+**Particle placement**: `maxLambda = min(acos(sqrt(1/L)) * 0.35, 0.9 * beltConfinedLambdaMax(L, beltName))` for belt populations A–C; `beltConfinedLambdaMax` returns the latitude of the quiet-time halo iso-flux contour (0.12) from `beltProfile.js` (the old ellipse formula is gone). Ring current (D) is uncapped, and slot-filling injections below the outer belt's halo inner edge (L < 2.6) bypass the cap. The `0.35` factor keeps particles near the magnetic equatorial plane. Using 0.65 sends particles to high latitudes where their equatorial projection (r·cos²λ) falls inside Earth when viewed from the pole.
 
 **Storm deformation on particles**: same `1 − stormIntensity × 0.22 × cosAngle` formula as the belt meshes, applied only to pops C and D (outer belt). Inner belt particles are stable and undeformed.
 
@@ -197,6 +202,8 @@ Tests are in `tests/` using vitest. They load `public/data/igrf14coeffs.json` di
 - `fieldLineTracer.test.js` — closed field lines return to surface, altitude scaling with latitude, point continuity
 - `marchingCubes.test.js` — sphere isosurface extraction, vertex positions, normals, Earth masking, empty output for out-of-range values
 - `magneticEnvironment.test.js` — L-shell values at equator/latitude, region classification, SAA proximity comparison
+- `beltProfile.test.js` — belt flux-shape model: profile calibration at core/halo levels, Kp expansion, storage-ring slot opening, iso-flux latitude contours
+- `radiationBelts.test.js` — belt renderer: shell/cut-face construction, shell vertices mapping back onto their iso-flux level through the cut-face transform (JS mirror of the shader), flux-driven colour, depth-write rules, clipping sync
 - `t89.test.js` — T89c model: iopt clamping, N-S antisymmetry, tail lobe directions, dayside CF, dipole tilt effect, NaN safety, magnitude range
 - `solarWind.test.js` — dynamic pressure, standoff distance, magnetopause geometry, GSM transforms, solarWindToKp mapping, external B behaviors, NaN safety
 - `totalField.test.js` — IGRF passthrough when disabled, subsolar enhancement, magnetopause confinement

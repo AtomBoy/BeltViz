@@ -129,6 +129,20 @@ describe('round-trip (build → parse)', () => {
   });
 });
 
+describe('beltColors URL key', () => {
+  it('round-trips the non-default belt colour mode', () => {
+    const p = makeParams();
+    p.beltColorMode = 'belt';
+    const hash = buildHashString(p);
+    expect(hash).toContain('beltColors=belt');
+    expect(parseHashString(hash).params.beltColorMode).toBe('belt');
+  });
+
+  it('ignores an unknown belt colour mode', () => {
+    expect(parseHashString('beltColors=plaid').params.beltColorMode).toBeUndefined();
+  });
+});
+
 describe('DEFAULTS drift guard', () => {
   // Maps every URL DEFAULTS key to its path in DEFAULT_PARAMS. If either
   // side changes without the other, this test fails — preventing silently
@@ -148,6 +162,7 @@ describe('DEFAULTS drift guard', () => {
     showInnerBelt:       ['showInnerBelt'],
     showOuterBelt:       ['showOuterBelt'],
     beltOpacity:         ['beltOpacity'],
+    beltColorMode:       ['beltColorMode'],
     clipEquatorial:      ['clipEquatorial'],
     clipMeridional:      ['clipMeridional'],
     clipMeridionalAngle: ['clipMeridionalAngle'],

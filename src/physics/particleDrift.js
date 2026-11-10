@@ -3,8 +3,9 @@
  *
  * Guiding-center drift physics for Van Allen belt particle visualization.
  *
- * Uses the bounce-averaged azimuthal drift approximation for a dipole field.
- * Reference: Roederer, "Dynamics of Geomagnetically Trapped Radiation" (1970), §3.4.
+ * Uses the gradient-curvature azimuthal drift of a dipole field.
+ * References: Schulz & Lanzerotti, "Particle Diffusion in the Radiation Belts"
+ * (1974); Roederer, "Dynamics of Geomagnetically Trapped Radiation" (1970).
  *
  * All positions are in scene coordinates (1 unit = 1 Earth radius).
  * Coordinate system: Y-up (north pole), magnetic equator in the XZ plane.
@@ -14,17 +15,53 @@
  *   Protons   drift WESTWARD  → negative phi direction (clockwise from north)
  */
 
+import { BELT_PROFILES, FLUX_LEVELS, resolveBeltProfile, isoFluxLambdaMax } from './beltProfile.js';
+
 export const ELECTRON = -1;
 export const PROTON   = +1;
 
+// Rest energies (MeV).
+const REST_ENERGY_MEV = { [ELECTRON]: 0.51099895, [PROTON]: 938.27209 };
+
+// Equatorial dipole surface field and Earth radius used for the drift period.
+const DIPOLE_B0_TESLA = 3.0e-5;
+const EARTH_RADIUS_M = 6.3712e6;
+
+// 4π·B₀·Re² / 3, expressed in MeV·s per unit charge (the elementary charge
+// cancels when energies are in eV): ≈ 5.1e3 MeV·s.
+const DRIFT_PERIOD_CONST_MEV_S =
+  (4 * Math.PI * DIPOLE_B0_TESLA * EARTH_RADIUS_M * EARTH_RADIUS_M) / 3 / 1e6;
+
 /**
- * Bounce-averaged azimuthal drift rate (rad / sim-second) in a dipole field.
+ * Azimuthal (gradient-curvature) drift period in a dipole field, in seconds,
+ * for an equatorially mirroring particle:
  *
- * For an isotropic pitch angle distribution the drift periods are:
- *   T_electron ≈ 1.05 / (L × E_k[MeV])  minutes  (eastward, positive)
- *   T_proton   ≈ 58.0 / (L × E_k[MeV])  minutes  (westward, negative)
+ *   T_d = 4π·q·B₀·Re² / (3 · L · γβ²·mc²)          γβ²·mc² = E(E + 2mc²)/(E + mc²)
  *
- * Reference: Schulz & Lanzerotti (1974), "Particle Diffusion in the Radiation Belts".
+ * (Schulz & Lanzerotti 1974, §I.4; Walt 1994, ch. 4.) The period depends on
+ * species only through the relativistic factor: at the same kinetic energy a
+ * non-relativistic proton and electron drift at nearly the same speed, in
+ * opposite directions, and T_d → ~43 min / (L·E[MeV]) in the non-relativistic
+ * limit (42.5 with B₀ = 0.30 G as here; textbooks using 0.311 G quote 44). Particles mirroring off the equator drift up to ~1.4× more slowly.
+ *
+ * Examples: 1 MeV electron at L = 4 → ≈ 16 min; 30 MeV proton at L = 1.5
+ * → ≈ 1 min; 100 keV ring-current proton at L = 4 → ≈ 1.8 h.
+ *
+ * @param {number} L          McIlwain L-shell value
+ * @param {number} energyMeV  Kinetic energy in MeV (> 0)
+ * @param {number} species    ELECTRON (-1) or PROTON (+1)
+ * @returns {number} Drift period in seconds (Infinity for invalid input)
+ */
+export function driftPeriodSeconds(L, energyMeV, species) {
+  if (!(L > 0) || !(energyMeV > 0)) return Infinity;
+  const mc2 = REST_ENERGY_MEV[species] ?? REST_ENERGY_MEV[PROTON];
+  const gammaBetaSqMc2 = (energyMeV * (energyMeV + 2 * mc2)) / (energyMeV + mc2);
+  return DRIFT_PERIOD_CONST_MEV_S / (L * gammaBetaSqMc2);
+}
+
+/**
+ * Azimuthal drift rate (rad / sim-second) in a dipole field — 2π over
+ * driftPeriodSeconds(), signed by drift direction.
  *
  * @param {number} L          McIlwain L-shell value (≥ 1)
  * @param {number} energyMeV  Kinetic energy in MeV (> 0)
@@ -33,14 +70,7 @@ export const PROTON   = +1;
  */
 export function driftRate(L, energyMeV, species) {
   if (L <= 0 || energyMeV <= 0) return 0;
-  // Formula gives period in HOURS (not minutes — see Roederer 1970 §3.4):
-  //   T_electron ≈ 1.05 / (L × E_k[MeV])  hours  → ~16 min at L=4, 1 MeV
-  //   T_proton   ≈ 58.0 / (L × E_k[MeV])  hours  → ~29 min at L=4, 30 MeV
-  const periodHours = species === ELECTRON
-    ? 1.05 / (L * energyMeV)
-    : 58.0 / (L * energyMeV);
-  const periodSeconds = periodHours * 3600;
-  const rate = (2 * Math.PI) / periodSeconds;
+  const rate = (2 * Math.PI) / driftPeriodSeconds(L, energyMeV, species);
   return species === ELECTRON ? rate : -rate;
 }
 
@@ -88,33 +118,33 @@ export function lossConeAngle(L) {
   return Math.asin(Math.sqrt(sinSq));
 }
 
+// Quiet-time belt shapes, resolved once. Particle confinement deliberately
+// uses the quiet-time profile: storm-time reshaping of the rendered outer belt
+// (Kp expansion, second slot) does not move particles that are already placed.
+const QUIET_PROFILES = {
+  innerBelt: resolveBeltProfile('innerBelt'),
+  outerBelt: resolveBeltProfile('outerBelt'),
+  storageBelt: resolveBeltProfile('storageBelt'),
+};
+
 /**
  * Maximum magnetic latitude (radians) at which a particle on drift shell L
- * still lies inside the rendered belt core mesh.
+ * still lies inside the rendered belt.
  *
- * The belt meshes (radiationBelts.js) have a rounded iso-flux-style
- * cross-section: an ellipse in (L, λ_m) space,
- *   ((L − L_mid)/L_half)² + (λ/latLimit)² = 1
- * with L_mid = (lMin+lMax)/2 and L_half = (lMax−lMin)/2. Solving for λ at a
- * given L yields the latitude where the contour closes — beyond it the
- * particle would poke out of the belt:
- *   λ_max = latLimit · √(1 − ((L − L_mid)/L_half)²)
+ * The belt's outermost rendered surface is the halo iso-flux contour of the
+ * flux-shape model in beltProfile.js; this returns the latitude where that
+ * contour crosses field line L (see isoFluxLambdaMax). It is 0 for L outside
+ * the halo's equatorial range. Callers placing particles intentionally
+ * outside the belt (e.g. storm-time slot filling) should not apply this cap.
  *
- * Returns 0 for L at or outside [lMin, lMax] (the contour pinches to the
- * equator at both L extremes). Callers placing particles intentionally outside
- * the belt (e.g. storm-time slot filling below lMin) should not apply this cap.
- *
- * @param {number} L           McIlwain L-shell of the particle
- * @param {number} lMin        Belt inner L boundary (at the equator)
- * @param {number} lMax        Belt outer L boundary (at the equator)
- * @param {number} latLimitRad Belt latitude limit in radians
- * @returns {number} Maximum |magnetic latitude| in radians, in [0, latLimitRad]
+ * @param {number} L        McIlwain L-shell of the particle
+ * @param {'innerBelt'|'outerBelt'|'storageBelt'} beltName
+ * @returns {number} Maximum |magnetic latitude| in radians
  */
-export function beltConfinedLambdaMax(L, lMin, lMax, latLimitRad) {
-  if (lMax <= lMin) return 0;
-  const f = (2 * L - (lMin + lMax)) / (lMax - lMin); // (L − L_mid) / L_half
-  if (f <= -1 || f >= 1) return 0;
-  return latLimitRad * Math.sqrt(1 - f * f);
+export function beltConfinedLambdaMax(L, beltName) {
+  const profile = QUIET_PROFILES[beltName];
+  if (!profile) return 0;
+  return isoFluxLambdaMax(profile, L, FLUX_LEVELS.halo);
 }
 
 /**
@@ -163,12 +193,12 @@ export function innerBeltElectronRate() {
  * Electrons diffuse inward from the outer belt and accumulate primarily in the
  * outer portion of the inner belt (L = 1.5–1.9). The deep inner belt (L < 1.5)
  * is strongly proton-dominated; electron diffusion barely reaches there.
- * Upper bound matches the inner belt core mesh (radiationBelts.js BELT_DEFINITIONS).
+ * Upper bound is the inner belt core edge (BELT_PROFILES in beltProfile.js).
  *
  * @returns {{ lMin: number, lMax: number }}
  */
 export function innerBeltElectronLRange() {
-  return { lMin: 1.5, lMax: 1.9 };
+  return { lMin: BELT_PROFILES.innerBelt.lPeak, lMax: BELT_PROFILES.innerBelt.coreMax };
 }
 
 /**
@@ -207,13 +237,13 @@ export function crandInjectionRate() {
  * L-shell range for inner belt proton injection (CRAND source).
  * Always L = 1.3–1.9 regardless of Dst — inner belt protons do not compress
  * significantly during geomagnetic storms on the timescales we simulate.
- * Matches the inner belt core mesh (radiationBelts.js BELT_DEFINITIONS) so the
+ * This is the inner belt core range (BELT_PROFILES in beltProfile.js), so the
  * particle population sits inside the rendered belt.
  *
  * @returns {{ lMin: number, lMax: number }}
  */
 export function innerBeltLRange() {
-  return { lMin: 1.3, lMax: 1.9 };
+  return { lMin: BELT_PROFILES.innerBelt.coreMin, lMax: BELT_PROFILES.innerBelt.coreMax };
 }
 
 /**

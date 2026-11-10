@@ -25,7 +25,8 @@ const Re = EARTH_RADIUS_KM;
 const PROTON_MASS_KG = 1.6726219e-27;
 
 /**
- * Compute solar wind dynamic pressure from speed and density.
+ * Compute solar wind dynamic pressure (ram pressure, rho*v^2) from speed and
+ * density. 400 km/s and 5 cm^-3 give 1.34 nPa.
  *
  * @param {number} vSw - Solar wind speed in km/s
  * @param {number} nSw - Solar wind density in cm^-3
@@ -35,8 +36,10 @@ export function computeDynamicPressure(vSw, nSw) {
   // Convert: km/s → m/s, cm^-3 → m^-3
   const v_ms = vSw * 1e3;
   const n_m3 = nSw * 1e6;
-  // Dp = 0.5 * n * m_p * v^2, result in Pa, convert to nPa
-  return 0.5 * n_m3 * PROTON_MASS_KG * v_ms * v_ms * 1e9;
+  // Dp = n * m_p * v^2 (momentum flux rho*v^2, NOT the kinetic energy density
+  // 0.5*rho*v^2): this is the definition Shue et al. (1998) and T01 are fitted
+  // to. Protons only (no helium correction). Result in Pa, converted to nPa.
+  return n_m3 * PROTON_MASS_KG * v_ms * v_ms * 1e9;
 }
 
 /**

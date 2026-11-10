@@ -17,7 +17,7 @@ node scripts/convert-solarwind.js 2025 # generate public/data/solarwind/2025-MM.
 node scripts/convert-satellites.js    # generate public/data/satellites.json (~1,500 curated sats)
 node scripts/convert-tles.js 2025     # generate public/data/tles/2025-MM.json (monthly TLEs)
 npm run dev                            # http://localhost:5173
-npm test             # run all 220 tests (vitest)
+npm test             # run all 358 tests (vitest)
 npm run test:watch   # watch mode
 npm run build        # production build → dist/
 ```
@@ -45,7 +45,7 @@ src/
   physics/
     igrf.js                # IGRF-14 spherical harmonic evaluation (computeB, computeBMagnitude)
     legendre.js            # Schmidt semi-normalised associated Legendre polynomials
-    fieldLineTracer.js     # RK4 field-line integration; generateSeedPoints()
+    fieldLineTracer.js     # RK4 field-line integration (adaptive step, 120 Re safety limit); generateSeedPoints()
     fieldLineWorker.js     # Web Worker wrapper — runs traceFieldLine() off the main thread
     scalarFieldWorker.js   # Web Worker — |B| and L-shell 3D grids (64³ default); marching cubes input
     marchingCubes.js       # Marching cubes isosurface extraction from Float32Array grids
@@ -56,11 +56,12 @@ src/
     coordinates.js         # Spherical ↔ Cartesian transforms, B-vector rotation
     magneticEnvironment.js # L-shell, belt region, SAA proximity at any point
     satellitePosition.js   # Geographic lat/lon/alt → physics Cartesian
-    particleDrift.js       # Drift period (Schulz & Lanzerotti 1974), loss cone, injection rate
+    beltProfile.js         # Radiation belt relative flux-shape model f(L, λ); BELT_PROFILES, FLUX_LEVELS
+    particleDrift.js       # Drift period (gradient-curvature, relativistic), loss cone, injection rate
   scene/
-    fieldLines.js          # buildFieldLineGroup() — TubeGeometry + CatmullRomCurve3
+    fieldLines.js          # buildFieldLineGroup() — TubeGeometry + index-sampled CatmullRomCurve3, min on-screen width
     isosurfaces.js         # buildIsosurfaceGroup() — |B| and L-shell transparent meshes
-    radiationBelts.js      # buildRadiationBeltGroup() — inner/outer belt boundary meshes
+    radiationBelts.js      # buildRadiationBeltGroup() — nested iso-flux belt shells + clip-plane cut faces
     magnetopauseMesh.js    # Shue magnetopause parametric surface (lazy-imported)
     particleSystem.js      # Van Allen belt particles — THREE.Points, drift animation, storm injection
     auroraRenderer.js      # Aurora oval — torus at 67° lat, curtain ShaderMaterial, Dst-driven opacity
@@ -87,7 +88,7 @@ scripts/
   convert-satellites.js    # Space-Track 3LE snapshot → public/data/satellites.json
   convert-tles.js          # Space-Track bulk 2LE archive → public/data/tles/YYYY-MM.json
 
-tests/                     # Vitest unit tests (220 tests, 14 files)
+tests/                     # Vitest unit tests (358 tests, 18 files)
 
 public/
   about.html               # User-facing physics reference (models, citations, how-to)
@@ -208,27 +209,33 @@ Orbit classes use official Space Track definitions applied from TLE line 2:
 
 ### Radiation belt geometry
 
-Belt meshes are **analytic dipole toroids** built from the field-line formula (no marching cubes):
+Belts are rendered from an **analytic relative-flux shape model** (`src/physics/beltProfile.js`, no marching cubes):
 
 ```
-r(λ) = L · cos²(λ)       [Earth radii]
-ρ(λ) = L · cos³(λ)       [equatorial distance]
-y(λ) = L · cos²(λ) · sin(λ)  [north-south]
+f(L, λ) = g(L) · h(λ)^k · a(r)
 ```
 
-Each belt is swept azimuthally with a **rounded iso-flux cross-section** — an ellipse in (L, λ) space (`L(t) = L_mid + L_half·cos t`, `λ(t) = latLimit·sin t`) mapped through the dipole geometry above. This models a smooth iso-flux contour, giving the classic concave-inner-edge crescent without the unphysical cusps (and below-surface inner edge) of the older field-line-wall profile. The meshes depict each belt's **high-flux core** (AP8/AE8 peak region, Vette 1991), not the maximum trapping envelope. Definitions:
+- `g(L)` — radial profile: a generalised Gaussian around the flux peak with separate earthward/outward widths.
+- `h(λ) = B_eq/B = cos⁶λ / √(4 − 3cos²λ)` — fall-off along a dipole field line (pitch-angle anisotropy via `k`).
+- `a(r)` — atmospheric cutoff, a smoothstep between r = 1.02 and 1.12 Re.
 
-| Belt | L range | Lat limit | Color |
-|---|---|---|---|
-| Inner (CRAND protons) | L = 1.3–1.9 | ±35° | warm orange/crimson |
-| Outer (storm electrons) | L = 3.0–4.8 (→ ~5.6 at high Kp) | ±22° | teal/cyan |
-| Storage / 3rd (storm only) | L = 3.0–3.5 | ±18° | violet |
+Iso-flux contours are crescents whose flanks follow the dipole field lines. Each belt is drawn as **three nested iso-flux shells** (halo 0.12, core 0.5, peak 0.8) and revolved azimuthally (`BELT_PROFILES`, equatorial L in Earth radii):
+
+| Belt | Peak L | Core (f = 0.5) | Halo (f = 0.12) | Core lat limit |
+|---|---|---|---|---|
+| Inner (CRAND protons) | 1.5 | 1.3–1.9 | 1.12–2.3 | 35° |
+| Outer (storm electrons) | 4.0 | 3.0–4.8 | 2.6–6.0 | 22° |
+| Storage / 3rd (storm only) | 3.25 | 3.0–3.5 | 2.85–3.65 | 18° |
+
+`resolveBeltProfile(name, {kp, storageFlux})` applies the Kp expansion of the outer belt's outer edge (up to +0.8 Re at Kp ≥ 7) and, when the storage ring is present, moves the outer belt's inner edge outward (core 3.0 → 3.9, peak 4.0 → 4.5) to open a second slot. The shape model is a rendering aid, not a flux forecast; absolute intensity comes from `src/physics/beltFlux.js`.
+
+Shells use an unlit `ShaderMaterial` with view-dependent rim opacity (the peak shell is drawn opaque with depth write when solid). When a clipping plane is active, a **cut face** quad on the plane evaluates the same flux model in GLSL and colour-maps it, giving a filled cross-section in the style of NASA SVS 30470. Two colour modes (`beltColorMode`, GUI "Colors", URL key `beltColors`): `flux` (default; one rainbow colormap shared by all belts) and `belt` (per-belt hues: red / teal / violet).
 
 The **storage belt** is the transient ultra-relativistic electron ring between the inner and outer belts (Baker et al. 2013; Shprits et al. 2013). It is invisible at quiet times and fades in during storms (Dst < −50 nT and Kp ≳ 3), sharing the Outer Belt visibility toggle.
 
-**Storm deformation** (`applyStormDeformation`): outer **and storage** belt vertices are scaled radially by `1 − stormIntensity × 0.22 × cos(angle_from_sun)`, compressing the dayside and stretching the nightside as the Dst index worsens. The shared radial scale preserves the gap between the storage and outer belts. The inner belt is stable and does not deform.
+**Storm deformation** (`applyStormDeformation`): outer **and storage** belt vertices are scaled radially by `1 − stormIntensity × 0.22 × cos(angle_from_sun)`, compressing the dayside and stretching the nightside as the Dst index worsens (the cut-face shader inverts this mapping). The shared radial scale preserves the gap between the storage and outer belts. The inner belt is stable and does not deform.
 
-**Dipole tilt**: the belt group and particle mesh are both rotated by the IGRF dipole quaternion so they align with the real magnetic axis rather than the geographic pole. The tilt axis is derived from IGRF degree-1 coefficients `(g₁₀, g₁₁, h₁₁)`:
+**Dipole tilt**: `buildRadiationBeltGroup` takes a `dipoleQuaternion` option and applies it to the shells subgroup (cut faces stay world-aligned, so the returned group root has no rotation); the particle mesh is rotated by the same quaternion. The tilt axis is derived from IGRF degree-1 coefficients `(g₁₀, g₁₁, h₁₁)`:
 
 ```javascript
 // Magnetic north axis — pointing toward the pole, not away from it.
@@ -247,9 +254,11 @@ Four physically distinct populations are simulated as `THREE.Points` (additive b
 | A | Proton (inner) | CRAND — cosmic ray neutron decay | 1.3–1.9 | 300–600 s | orange |
 | B | Electron (inner) | Inward radial diffusion | 1.5–1.9 | 120 s | blue |
 | C | Electron (outer) | Nightside plasma sheet, storm-driven | 3.0–4.5 | 25–45 s | blue |
-| D | Proton (ring current) | Nightside plasma sheet, storm-driven | 1.5–4.5 | 35–45 s | orange |
+| D | Proton (ring current, 100 keV) | Nightside plasma sheet, storm-driven | 1.5–4.5 | 35–45 s | orange |
 
 Particle budgets use **Little's Law** (N_steady = rate × τ) so each population's share of the max-particle pool is proportional to its steady-state count. Budgets recalculate each frame from the current Dst index.
+
+**Drift** uses the gradient-curvature period `T = 4π·q·B₀·Re² / (3·L·γβ²mc²)` (non-relativistic limit ≈ 44 min / (L·E[MeV]) for either species). Examples: 1 MeV electron at L=4 ≈ 16 min; 30 MeV CRAND proton at L=1.5 ≈ 1 min; 100 keV ring-current proton at L=4 ≈ 1.8 h. One visual speed-up (`VISUAL_DRIFT_SCALE = 6.3`) applies to all populations, so 30 MeV inner-belt protons visibly race westward (~9 s per orbit on screen) while inner-belt electrons drift slowly. Belt populations (A, B, C) are latitude-capped by the halo iso-flux contour (`beltConfinedLambdaMax`); the ring current is unconfined.
 
 Outer belt electrons and ring current protons are injected from the **nightside** (anti-solar ± 90°) and their positions are deformed by the same storm formula as the belt meshes, keeping particles visually aligned with the belt geometry during storms.
 
@@ -263,7 +272,7 @@ All simulation parameters are serialised to the **URL fragment** (`window.locati
 http://localhost:5173/#innerBelt=true&outerBelt=true&particles=true&dst=-92&vSw=600&bz=-15
 ```
 
-Key/value pairs use short readable keys (`showFL`, `isoLevels`, `dst`, `particles`, `camX/Y/Z`, …). Camera position is written as an **atomic triplet** — all three components or none — so a partial URL never leaves the camera half-restored on load. The `isoLevels` key is re-applied after `initIsoLevels()` runs during GUI setup, since that function resets the active set to defaults.
+Key/value pairs use short readable keys (`showFL`, `isoLevels`, `dst`, `particles`, `beltColors`, `camX/Y/Z`, …). Camera position is written as an **atomic triplet** — all three components or none — so a partial URL never leaves the camera half-restored on load. The `isoLevels` key is re-applied after `initIsoLevels()` runs during GUI setup, since that function resets the active set to defaults.
 
 ---
 

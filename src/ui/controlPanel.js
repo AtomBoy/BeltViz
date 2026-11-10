@@ -191,6 +191,9 @@ export function createControlPanel(params, callbacks) {
   beltFolder.add(params, 'beltOpacity', 0.05, 1.0, 0.01)
     .name('Opacity')
     .onChange(onBeltVisualChange);
+  beltFolder.add(params, 'beltColorMode', { 'Flux map (rainbow)': 'flux', 'Per-belt hues': 'belt' })
+    .name('Colors')
+    .onChange(onBeltVisualChange);
   beltFolder.close();
 
   // Belt Particles subfolder

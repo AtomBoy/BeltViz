@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ELECTRON, PROTON,
+  driftPeriodSeconds,
   driftRate,
   driftShellPosition,
   lossConeAngle,
@@ -15,6 +16,7 @@ import {
   ringCurrentLRange,
   beltConfinedLambdaMax,
 } from '../src/physics/particleDrift.js';
+import { BELT_PROFILES, FLUX_LEVELS, resolveBeltProfile, beltFluxAt } from '../src/physics/beltProfile.js';
 
 // ─── driftRate ────────────────────────────────────────────────────────────────
 
@@ -56,10 +58,60 @@ describe('driftRate - energy scaling', () => {
     expect(rHigh).toBeGreaterThan(rLow);
   });
 
-  it('rate is proportional to energy', () => {
+  it('rate is proportional to energy in the non-relativistic limit', () => {
+    const r1 = driftRate(4, 1, PROTON);
+    const r2 = driftRate(4, 2, PROTON);
+    expect(r2 / r1).toBeCloseTo(2, 2);
+  });
+
+  it('relativistic electrons gain less than proportionally (1 → 2 MeV: ×1.8)', () => {
     const r1 = driftRate(4, 1, ELECTRON);
     const r2 = driftRate(4, 2, ELECTRON);
-    expect(r2 / r1).toBeCloseTo(2, 3);
+    expect(r2 / r1).toBeGreaterThan(1.7);
+    expect(r2 / r1).toBeLessThan(1.9);
+  });
+});
+
+describe('driftPeriodSeconds - physical values', () => {
+  const MIN = 60;
+
+  it('1 MeV electron at L = 4 drifts around Earth in about 16 minutes', () => {
+    const T = driftPeriodSeconds(4, 1, ELECTRON);
+    expect(T).toBeGreaterThan(14 * MIN);
+    expect(T).toBeLessThan(18 * MIN);
+  });
+
+  it('1 MeV electron at geosynchronous L = 6.6 takes about 10 minutes', () => {
+    const T = driftPeriodSeconds(6.6, 1, ELECTRON);
+    expect(T).toBeGreaterThan(8 * MIN);
+    expect(T).toBeLessThan(12 * MIN);
+  });
+
+  it('non-relativistic limit is ~44 min / (L·E[MeV]) for either species', () => {
+    // 100 keV proton at L = 4: 44 / (4 × 0.1) = 110 min
+    const Tp = driftPeriodSeconds(4, 0.1, PROTON);
+    expect(Tp / MIN).toBeGreaterThan(100);
+    expect(Tp / MIN).toBeLessThan(115);
+    // A 10 keV electron is barely relativistic: within a few % of the proton value
+    const ratio = driftPeriodSeconds(4, 0.01, ELECTRON) / driftPeriodSeconds(4, 0.01, PROTON);
+    expect(ratio).toBeGreaterThan(0.97);
+    expect(ratio).toBeLessThan(1.03);
+  });
+
+  it('30 MeV inner-belt proton at L = 1.5 drifts in about a minute', () => {
+    const T = driftPeriodSeconds(1.5, 30, PROTON);
+    expect(T).toBeGreaterThan(45);
+    expect(T).toBeLessThan(75);
+  });
+
+  it('10 MeV proton drifts faster than a 1 MeV electron on the same shell', () => {
+    // cf. ECSS-E-ST-10-04C Table I-1 (minutes for the proton vs longer for the electron)
+    expect(driftPeriodSeconds(1.7, 10, PROTON)).toBeLessThan(driftPeriodSeconds(1.7, 1, ELECTRON));
+  });
+
+  it('returns Infinity for invalid input, consistent with driftRate = 0', () => {
+    expect(driftPeriodSeconds(0, 1, ELECTRON)).toBe(Infinity);
+    expect(driftPeriodSeconds(4, 0, PROTON)).toBe(Infinity);
   });
 });
 
@@ -321,64 +373,55 @@ describe('ringCurrentLRange', () => {
 // ─── beltConfinedLambdaMax ────────────────────────────────────────────────────
 
 describe('beltConfinedLambdaMax', () => {
-  const LAT = 22 * Math.PI / 180; // outer belt core latitude limit
+  const inner = BELT_PROFILES.innerBelt;
+  const outer = BELT_PROFILES.outerBelt;
 
-  it('returns 0 at L = lMin (rounded contour pinches to the equator)', () => {
-    expect(beltConfinedLambdaMax(3.0, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+  it('returns 0 for L outside the rendered belt (beyond the halo edges)', () => {
+    expect(beltConfinedLambdaMax(outer.haloMin - 0.3, 'outerBelt')).toBe(0);
+    expect(beltConfinedLambdaMax(outer.haloMax + 0.3, 'outerBelt')).toBe(0);
+    expect(beltConfinedLambdaMax(inner.haloMax + 0.2, 'innerBelt')).toBe(0);
   });
 
-  it('returns 0 for L outside the belt (below lMin or beyond lMax)', () => {
-    expect(beltConfinedLambdaMax(2.2, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
-    expect(beltConfinedLambdaMax(5.5, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
+  it('is positive across the whole core range, where particles are injected', () => {
+    for (let L = outer.coreMin; L <= outer.coreMax + 1e-9; L += 0.2) {
+      expect(beltConfinedLambdaMax(L, 'outerBelt')).toBeGreaterThan(0.1);
+    }
+    for (let L = inner.coreMin; L <= inner.coreMax + 1e-9; L += 0.1) {
+      expect(beltConfinedLambdaMax(L, 'innerBelt')).toBeGreaterThan(0.1);
+    }
   });
 
-  it('returns 0 at L = lMax (contour pinches to the equator)', () => {
-    expect(beltConfinedLambdaMax(4.8, 3.0, 4.8, LAT)).toBeCloseTo(0, 10);
-  });
-
-  it('peaks at the full latLimit at the belt centre L_mid', () => {
-    expect(beltConfinedLambdaMax(3.9, 3.0, 4.8, LAT)).toBeCloseTo(LAT, 10);
-  });
-
-  it('rises from lMin to L_mid, then falls to lMax', () => {
+  it('rises from the inner halo edge to the peak, then falls to the outer edge', () => {
     let prev = -Infinity;
-    for (let L = 3.0; L <= 3.9 + 1e-9; L += 0.15) {
-      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
-      expect(lam).toBeGreaterThanOrEqual(prev);
+    for (let L = outer.haloMin; L <= outer.lPeak + 1e-9; L += 0.1) {
+      const lam = beltConfinedLambdaMax(L, 'outerBelt');
+      expect(lam).toBeGreaterThanOrEqual(prev - 1e-9);
       prev = lam;
     }
-    for (let L = 3.9; L <= 4.8 + 1e-9; L += 0.15) {
-      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
-      expect(lam).toBeLessThanOrEqual(prev + 1e-12);
+    for (let L = outer.lPeak; L <= outer.haloMax + 1e-9; L += 0.1) {
+      const lam = beltConfinedLambdaMax(L, 'outerBelt');
+      expect(lam).toBeLessThanOrEqual(prev + 1e-9);
       prev = lam;
     }
   });
 
-  it('is symmetric about L_mid', () => {
-    for (const dL of [0.2, 0.5, 0.8]) {
-      expect(beltConfinedLambdaMax(3.9 + dL, 3.0, 4.8, LAT))
-        .toBeCloseTo(beltConfinedLambdaMax(3.9 - dL, 3.0, 4.8, LAT), 10);
+  it('the capped point lies on the halo iso-flux contour', () => {
+    const profile = resolveBeltProfile('outerBelt');
+    for (const L of [3.0, 4.0, 5.0]) {
+      const lam = beltConfinedLambdaMax(L, 'outerBelt');
+      expect(beltFluxAt(profile, L, lam)).toBeCloseTo(FLUX_LEVELS.halo, 4);
     }
   });
 
-  it('lies exactly on the mesh cross-section ellipse ((L−L_mid)/L_half)² + (λ/latLimit)² = 1', () => {
-    for (const L of [3.2, 3.6, 4.5]) {
-      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
-      const f = (L - 3.9) / 0.9;
-      expect(f * f + (lam / LAT) * (lam / LAT)).toBeCloseTo(1, 10);
+  it('keeps inner-belt particles above the atmosphere', () => {
+    for (let L = inner.coreMin; L <= inner.coreMax + 1e-9; L += 0.1) {
+      const lam = beltConfinedLambdaMax(L, 'innerBelt');
+      expect(L * Math.cos(lam) ** 2).toBeGreaterThan(1.02);
     }
   });
 
-  it('stays within [0, latLimit] for any input', () => {
-    for (const L of [0.5, 1, 2, 3, 3.5, 4, 4.4, 5, 10]) {
-      const lam = beltConfinedLambdaMax(L, 3.0, 4.8, LAT);
-      expect(lam).toBeGreaterThanOrEqual(0);
-      expect(lam).toBeLessThanOrEqual(LAT);
-    }
-  });
-
-  it('returns 0 for a degenerate belt (lMax <= lMin)', () => {
-    expect(beltConfinedLambdaMax(3.0, 3.0, 3.0, LAT)).toBe(0);
+  it('returns 0 for an unknown belt', () => {
+    expect(beltConfinedLambdaMax(4, 'noSuchBelt')).toBe(0);
   });
 });
 

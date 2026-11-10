@@ -3,7 +3,9 @@ import { readFileSync } from 'fs';
 import {
   traceFieldLine,
   generateSeedPoints,
+  DEFAULT_RMAX_RE,
 } from '../src/physics/fieldLineTracer.js';
+import { insideMagnetopause } from '../src/physics/solarWind.js';
 import { cartesianToSpherical } from '../src/physics/coordinates.js';
 
 // Solar wind preset helpers (mirrors CLAUDE.md presets)
@@ -275,12 +277,65 @@ describe('traceFieldLine - solar wind extent', () => {
   });
 });
 
+describe('traceFieldLine - lines run to their natural end', () => {
+  // With the default (safety-only) rMax, no line may be cut off in mid-space:
+  // each end must be either at Earth's surface or outside the magnetopause,
+  // where the total field fades to zero and the line genuinely stops.
+  const SEEDS = [
+    [75, 0], [75, 90], [75, 180], [75, 270], // open / far-tail-closing lines
+    [88, 0], [88, 180],                      // polar cap
+  ];
+
+  it.each([
+    ['quiet', SW_QUIET],
+    ['moderate storm', SW_MODERATE],
+    ['severe storm', SW_SEVERE],
+  ])('%s: every line end is at the surface or outside the magnetopause', (_, sw) => {
+    let farthest = 0;
+    for (const [lat, lon] of SEEDS) {
+      const { x, y, z } = seedAtLatLon(lat, lon);
+      const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 1, solarWindParams: sw });
+      farthest = Math.max(farthest, maxRadius(points));
+      for (const end of [points[0], points[points.length - 1]]) {
+        const r = Math.sqrt(end[0] ** 2 + end[1] ** 2 + end[2] ** 2);
+        const atSurface = r < EARTH_R * 1.05;
+        const outsideMp = insideMagnetopause(end[0], end[1], end[2], sw) < 0.5;
+        expect(atSurface || outsideMp).toBe(true);
+        expect(r).toBeLessThan(EARTH_R * DEFAULT_RMAX_RE); // safety limit never the reason
+      }
+    }
+    // The old 25 Re cutoff is gone: at least one of these lines goes well past it.
+    expect(farthest).toBeGreaterThan(EARTH_R * 30);
+  });
+
+  it('step size stays within the near (4x) and far-tail (14x) caps', () => {
+    const { x, y, z } = seedAtLatLon(88, 180);
+    const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 1, solarWindParams: SW_QUIET });
+    let sawFarStep = false;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      const step = Math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2);
+      const rStart = Math.min(
+        Math.sqrt(a[0] ** 2 + a[1] ** 2 + a[2] ** 2),
+        Math.sqrt(b[0] ** 2 + b[1] ** 2 + b[2] ** 2),
+      ) / EARTH_R;
+      expect(step).toBeLessThan(1420);           // 14 x 100 km + margin
+      if (rStart < 24) expect(step).toBeLessThan(420); // unchanged schedule inside 25 Re
+      if (step > 420) sawFarStep = true;
+    }
+    expect(sawFarStep).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Golden regression traces — exact values pinned against the IGRF-14 2025
 // epoch. These guard performance refactors of the tracer / field evaluation:
 // positions must match within 1 km and color metrics (the 4th component of
 // each point) within 1e-6. The checksum covers every point's metric, not
 // just the three sampled ones.
+// The two solar-wind traces were re-pinned on 2026-11-10 when dynamic pressure
+// was corrected from 0.5*rho*v^2 to rho*v^2 (the dipole-only trace is unchanged).
 // ---------------------------------------------------------------------------
 
 describe('traceFieldLine - golden traces (regression)', () => {
@@ -310,11 +365,11 @@ describe('traceFieldLine - golden traces (regression)', () => {
   it('65°N nightside, severe storm (metric = external influence ratio)', () => {
     const { x, y, z } = seedAtLatLon(65, 180);
     const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 1, solarWindParams: SW_SEVERE });
-    expect(points.length).toBe(1224);
-    expectPoint(points[0], [-2989.45803008786, -5206.49234195272, 1881.97256843569, 0.00302084966857936], 1, 1e-6, false);
-    expectPoint(points[Math.floor(points.length / 2)], [-109474.511243403, 1678.89953468688, 23258.9235850662, 0.680524399484968], 1, 1e-6, false);
-    expectPoint(points[points.length - 1], [-2629.22576586608, 5697.33151322109, -8.14014064982745, 0.00284219093467014], 1, 1e-6, false);
-    const expected = 570.631354682121;
+    expect(points.length).toBe(1178);
+    expectPoint(points[0], [-2987.29143813459, -5194.16797326941, 1774.99530935424, 0.00314684092080326], 1, 1e-6, false);
+    expectPoint(points[Math.floor(points.length / 2)], [-103149.298929079, 1524.66064906879, 19691.8308442589, 0.722231440919983], 1, 1e-6, false);
+    expectPoint(points[points.length - 1], [-2629.21761563498, 5697.33639141442, -8.12278347593659, 0.00301688230732552], 1, 1e-6, false);
+    const expected = 564.938626259230;
     expect(Math.abs(checksum(points) - expected)).toBeLessThan(1e-6 * expected);
   });
 
@@ -322,10 +377,10 @@ describe('traceFieldLine - golden traces (regression)', () => {
     const { x, y, z } = seedAtLatLon(40, 90);
     const points = traceFieldLine(x, y, z, coeffs, { maxDegree: 13, solarWindParams: SW_QUIET });
     expect(points.length).toBe(129);
-    expectPoint(points[0], [-325.576906217635, -2726.75031205678, 5634.90683335643, 0.000201276616393105], 1, 1e-6, false);
-    expectPoint(points[Math.floor(points.length / 2)], [-107.322371069538, 1234.77115248521, 9711.12211075199, 0.00120691776685613], 1, 1e-6, false);
-    expectPoint(points[points.length - 1], [-1.06122836517151, 4074.77409034144, 4782.76487021162, 0.000184289532374676], 1, 1e-6, false);
-    const expected = 0.0928264466311976;
+    expectPoint(points[0], [-325.645780396594, -2726.74898176980, 5634.98760594319, 0.000207480617781557], 1, 1e-6, false);
+    expectPoint(points[Math.floor(points.length / 2)], [-107.508697122537, 1234.81602292198, 9711.15712266619, 0.00120247223031592], 1, 1e-6, false);
+    expectPoint(points[points.length - 1], [-1.06016443362578, 4074.77308156140, 4782.76507055565, 0.000190922106000397], 1, 1e-6, false);
+    const expected = 0.0932154183943297;
     expect(Math.abs(checksum(points) - expected)).toBeLessThan(1e-6 * expected);
   });
 });

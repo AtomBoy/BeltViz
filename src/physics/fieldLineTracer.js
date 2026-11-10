@@ -109,11 +109,25 @@ function rk4Step(x, y, z, ds, k1, coeffs, maxDegree, solarWindParams) {
   ];
 }
 
+// Beyond this radius the tracer is in the far magnetotail, where the field is
+// weak, smooth and nearly straight. There the step grows linearly with
+// distance (up to FAR_STEP_CAP × base) so that tracing lines to their natural
+// end stays affordable. Inside it the step schedule is the original
+// sqrt curve capped at 4× — unchanged, and continuous with the far schedule
+// at the boundary.
+export const DEFAULT_RMAX_RE = 120;
+const FAR_FIELD_RE = 25;
+const NEAR_STEP_CAP = 4;
+const FAR_STEP_CAP = 14;
+const NEAR_SCALE_AT_BOUNDARY = Math.min(NEAR_STEP_CAP, Math.sqrt(FAR_FIELD_RE / 2));
+
 /**
  * Compute adaptive step size based on distance from Earth.
  * Near Earth (r < 2 Re): use baseStep for accuracy in strong-field region.
- * Far from Earth: scale step with sqrt(r/Re) but cap at 4x baseStep
- * to maintain accuracy in the weak external field.
+ * Out to 25 Re: scale step with sqrt(r/2Re), capped at 4x baseStep to maintain
+ * accuracy in the weak external field.
+ * Beyond 25 Re (far tail): scale grows linearly with r, capped at 14x baseStep
+ * (endpoints agree with a 25 km fixed-step reference to ~0.1 Re).
  *
  * @param {number} r - Distance from Earth center in km
  * @param {number} baseStep - Base step size in km (sign preserved)
@@ -122,9 +136,10 @@ function rk4Step(x, y, z, ds, k1, coeffs, maxDegree, solarWindParams) {
 function adaptiveStepSize(r, baseStep) {
   const rRe = r / EARTH_RADIUS_KM;
   if (rRe < 2) return baseStep;
-  // Scale gently with distance, cap at 4x base to keep tail accuracy
-  const scale = Math.min(4, Math.sqrt(rRe / 2));
-  return baseStep * scale;
+  if (rRe > FAR_FIELD_RE) {
+    return baseStep * Math.min(FAR_STEP_CAP, NEAR_SCALE_AT_BOUNDARY * (rRe / FAR_FIELD_RE));
+  }
+  return baseStep * Math.min(NEAR_STEP_CAP, Math.sqrt(rRe / 2));
 }
 
 /**
@@ -140,7 +155,10 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
   const baseDs = options.stepSize || 200;
   const maxSteps = options.maxSteps || 10000;
   const rMin = options.rMin || EARTH_RADIUS_KM * 0.99;
-  const rMax = options.rMax || EARTH_RADIUS_KM * 25;
+  // Safety limit only: lines normally end on their own well inside this,
+  // either back at the surface or where the field fades to zero outside the
+  // magnetopause (see `valid` in evalPoint).
+  const rMax = options.rMax || EARTH_RADIUS_KM * DEFAULT_RMAX_RE;
   const maxDegree = options.maxDegree;
   const solarWindParams = options.solarWindParams;
 
@@ -168,7 +186,7 @@ function traceHalf(startX, startY, startZ, coeffs, options = {}) {
     points.push([x, y, z, cur.metric]);
 
     if (rNext < rMin) break; // Hit Earth's surface
-    if (rNext > rMax) break; // Escaped to space (open field line)
+    if (rNext > rMax) break; // Safety limit reached (see DEFAULT_RMAX_RE)
   }
 
   return points;
